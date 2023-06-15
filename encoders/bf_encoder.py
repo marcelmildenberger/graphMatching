@@ -1,6 +1,5 @@
-# Encodes a given using bllom filters for PPRL
+# Encodes a given using bloom filters for PPRL
 
-import io
 from typing import Sequence, AnyStr, Union
 from encoder import Encoder
 import numpy as np
@@ -8,6 +7,8 @@ from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
+
+from utils import calc_condensed_index
 
 class BFEncoder(Encoder):
 
@@ -35,9 +36,10 @@ class BFEncoder(Encoder):
                 fields.append(StringSpec(str(i),
                                          FieldHashingProperties(comparator=NgramComparison(
                                              self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
-                                                                strategy=BitsPerFeatureStrategy(
-                                             self.bits_per_feature if type(self.bits_per_feature) == int else self.bits_per_feature[i]
-                                                                ))))
+                                             strategy=BitsPerFeatureStrategy(
+                                                 self.bits_per_feature if type(self.bits_per_feature) == int else
+                                                 self.bits_per_feature[i]
+                                             ))))
             else:
                 fields.append(IntegerSpec(str(i), FieldHashingProperties(comparator=NgramComparison(2),
                                                                          strategy=BitsPerFeatureStrategy(30))))
@@ -47,7 +49,17 @@ class BFEncoder(Encoder):
 
     def encode(self, data: Sequence[Sequence[Union[str, int]]]) -> np.ndarray:
         self.__create_schema()
-        return clk.generate_clks(data, self.schema, self.secret)
+        enc_data = clk.generate_clks(data, self.schema, self.secret) # Returns a list of bitarrays
+        # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
+        # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
+        enc_data = np.stack([list(barr) for barr in enc_data])
+        return enc_data
 
-    def encode_and_compare(self, data: Sequence[Sequence[str]]) -> np.ndarray:
+    def encode_and_compare(self, data: Sequence[Sequence[str]], metric: str) -> np.ndarray:
+        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
+                           "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis", "matching",
+                           "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
+                           "sqeuclidean", "yule"]
+        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         enc = self.encode(data)
+
