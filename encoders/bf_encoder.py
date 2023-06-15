@@ -3,17 +3,11 @@
 import io
 from typing import Sequence, AnyStr, Union
 from encoder import Encoder
-import itertools
-import pandas as pd
 import numpy as np
-import anonlink
-import clkhash
 from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
-from clkhash.serialization import serialize_bitarray
-
 
 class BFEncoder(Encoder):
 
@@ -56,32 +50,4 @@ class BFEncoder(Encoder):
         return clk.generate_clks(data, self.schema, self.secret)
 
     def encode_and_compare(self, data: Sequence[Sequence[str]]) -> np.ndarray:
-        enc2 = clk.generate_clks(data, schema, self.secret)
-
-
-def drop_redundancy(data):
-    data = data[data.Node1 != data.Node2].copy()
-
-    data["ID"] = data.apply(lambda x: str(min(x['Node1'], x['Node2'])) + "-" + str(max(x['Node1'], x['Node2'])), axis=1)
-    data.drop_duplicates(subset="ID", inplace=True)
-    data.drop(columns=["ID"], inplace=True)
-    return data
-
-
-def encode_and_compare(schema, data, secret="secret"):
-    if "node_id" not in data.columns:
-        node_ids = np.arange(len(data))
-    else:
-        node_ids = data["node_id"]
-        data = data.drop(columns=["node_id"])
-
-    tmp_csv = io.StringIO()
-    data.to_csv(tmp_csv)
-    tmp_csv.seek(0)
-    hashed_data = clk.generate_clk_from_csv(tmp_csv, secret, schema)
-    similarity, dataset_i, record_i = anonlink.candidate_generation.find_candidate_pairs(
-        [hashed_data, hashed_data],
-        anonlink.similarities.dice_coefficient, 0)
-    pairw_sims_enc = [(node_ids[record_i[0][i]], node_ids[record_i[1][i]], similarity[i]) for i in
-                      range(len(similarity))]
-    return pairw_sims_enc
+        enc = self.encode(data)
