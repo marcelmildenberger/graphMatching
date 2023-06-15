@@ -21,7 +21,7 @@ class N2VEmbedder():
 
         self.model = None
 
-    def train(self, data_dir: str) -> np.ndarray:
+    def train(self, data_dir: str):
         graph = pecanpy.SparseOTF(p=self.p, q=self.q, workers=self.workers, verbose=True, random_state=self.seed)
 
         # Read the data  into the graph.
