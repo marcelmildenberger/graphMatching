@@ -1,7 +1,7 @@
 # Encodes a given using bloom filters for PPRL
 
 from typing import Sequence, AnyStr, List, Tuple, Any
-from encoder import Encoder
+from .encoder import Encoder
 import numpy as np
 from clkhash import clk
 from clkhash.field_formats import *
@@ -9,7 +9,7 @@ from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
 
 from scipy.spatial.distance import pdist
-from utils import calc_condensed_index
+from .utils import calc_condensed_index
 
 
 class BFEncoder(Encoder):
