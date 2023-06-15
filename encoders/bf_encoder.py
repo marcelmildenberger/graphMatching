@@ -16,6 +16,13 @@ class BFEncoder(Encoder):
 
     def __init__(self, secret: AnyStr, filter_size: int, bits_per_feature: Union[int, Sequence[int]],
                  ngram_size: Union[int, Sequence[int]]):
+        """
+        Constuctor for the BFEncoder class.
+        :param secret: Secret to be used in the HMAC
+        :param filter_size: Bloom Filter Size
+        :param bits_per_feature: Bits to be set per feature (=Number of Hash functions)
+        :param ngram_size: Size of the ngrams
+        """
         self.secret = secret
         self.filter_size = filter_size
         self.bits_per_feature = bits_per_feature
@@ -50,6 +57,13 @@ class BFEncoder(Encoder):
         self.schema = Schema(fields, self.filter_size)
 
     def encode(self, data: Sequence[Sequence[Union[str, int]]]) -> np.ndarray:
+        """
+        Encodes the given data using bloom filter encoding (CLKHash), returns a MxN array of bits, where M is the number
+        of records and N is the size of the bloom filter specified in schema.
+        :param data: Data to encode. A list of lists: Inner list represents records with integers or strings as values.
+        :return: a MxN array of bits, where M is the number of records (length of data) and N is the size of the bloom
+        filter.
+        """
         self.__create_schema()
         enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
@@ -57,9 +71,17 @@ class BFEncoder(Encoder):
         enc_data = np.stack([list(barr) for barr in enc_data])
         return enc_data
 
-    def encode_and_compare(self, data: Sequence[Sequence[str]], metric: str, sim: bool = True) -> List[
+    def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], metric: str, sim: bool = True) -> List[
         Tuple[int, int, float]]:
-
+        """
+        Encodes the given data using bloom filter encoding (CLKHash), then computes and returns the pairwise
+        similarities/distances of the bloom filters as a list of tuples.
+        :param data: Data to encode. A list of lists: Inner list represents records with integers or strings as values.
+        :param metric: Similarity/Distance metric to compute. Any of the ones supported by scipy's pdist.
+        :param sim: Choose if similarities (True) or distances (False) should be returned.
+        :return: The similarities/distances as a list of tuples: [(i,j,val),...], where i and j are the indices of
+        the records in data and val is the computed similarity/distance.
+        """
         available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
                              "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
                              "matching",
