@@ -1,3 +1,5 @@
+import csv
+from typing import Sequence
 def read_csv(path: str, header: bool = True) -> Sequence[Sequence[str]]:
     data = []
     with open(path, "r") as f:
