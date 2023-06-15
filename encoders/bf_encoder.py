@@ -20,9 +20,13 @@ class BFEncoder(Encoder):
         Constuctor for the BFEncoder class.
         :param secret: Secret to be used in the HMAC
         :param filter_size: Bloom Filter Size
-        :param bits_per_feature: Bits to be set per feature (=Number of Hash functions)
-        :param ngram_size: Size of the ngrams
+        :param bits_per_feature: Bits to be set per feature (=Number of Hash functions). If an integer is passed, the
+        same value is used for all attributes. If a list of integers is passed, one value per attribute must be
+        specified.
+        :param ngram_size: Size of the ngrams. If an integer is passed, the same value is used for all attributes. If a
+        list of integers is passed, one value per attribute must be specified.
         """
+
         self.secret = secret
         self.filter_size = filter_size
         self.bits_per_feature = bits_per_feature
@@ -64,6 +68,15 @@ class BFEncoder(Encoder):
         :return: a MxN array of bits, where M is the number of records (length of data) and N is the size of the bloom
         filter.
         """
+        if not type(self.bits_per_feature) == int:
+            assert len(self.bits_per_feature) == len(data[0]), "Invalid number ("+ str(len(self.ngram_size)) + ") of " \
+            "values for bits_per_feature. Must either be one value or one value per attribute ("+ str(len(data[0])) + ")."
+
+
+        if not type(self.ngram_size) == int:
+            assert len(self.ngram_size) == len(data[0]), "Invalid number ("+ str(len(self.ngram_size)) + ") of "\
+            "values for ngram_size. Must either be one value or one value per attribute ("+ str(len(data[0])) + ")."
+
         self.__create_schema()
         enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
