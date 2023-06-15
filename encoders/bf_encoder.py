@@ -1,6 +1,6 @@
 # Encodes a given using bloom filters for PPRL
 
-from typing import Sequence, AnyStr, Union
+from typing import Sequence, AnyStr, List, Tuple, Any
 from encoder import Encoder
 import numpy as np
 from clkhash import clk
@@ -8,7 +8,9 @@ from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
 
+from scipy.spatial.distance import pdist
 from utils import calc_condensed_index
+
 
 class BFEncoder(Encoder):
 
@@ -49,17 +51,32 @@ class BFEncoder(Encoder):
 
     def encode(self, data: Sequence[Sequence[Union[str, int]]]) -> np.ndarray:
         self.__create_schema()
-        enc_data = clk.generate_clks(data, self.schema, self.secret) # Returns a list of bitarrays
+        enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
         # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
         enc_data = np.stack([list(barr) for barr in enc_data])
         return enc_data
 
-    def encode_and_compare(self, data: Sequence[Sequence[str]], metric: str) -> np.ndarray:
+    def encode_and_compare(self, data: Sequence[Sequence[str]], metric: str, sim: bool = True) -> List[
+        Tuple[int, int, float]]:
+
         available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
-                           "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis", "matching",
-                           "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
-                           "sqeuclidean", "yule"]
+                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
+                             "matching",
+                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
+                             "sqeuclidean", "yule"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         enc = self.encode(data)
+        # Calculates pairwise distances between the provided data points
+        pw_metrics = pdist(enc, metric=metric)
+        # Convert to similarities if specified
+        if sim:
+            pw_metrics = [1 - p for p in pw_metric]
 
+        # Convert to "long" format
+        pw_metrics_long = []
+        for i in range(len(enc)):
+            for j in range(i + 1, len(enc)):
+                pw_metrics_long.append((i, j, pw_metrics[calc_condensed_index(i, j, len(enc))]))
+
+        return pw_metrics_long
