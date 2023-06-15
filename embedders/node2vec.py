@@ -22,7 +22,7 @@ class N2VEmbedder():
         self.model = None
 
     def train(self, data_dir: str):
-        graph = pecanpy.SparseOTF(p=self.p, q=self.q, workers=self.workers, verbose=True, random_state=self.seed)
+        graph = pecanpy.pecanpy.SparseOTF(p=self.p, q=self.q, workers=self.workers, verbose=True, random_state=self.seed)
 
         # Read the data  into the graph.
         graph.read_edg(data_dir, weighted=True, directed=False)
@@ -46,7 +46,12 @@ class N2VEmbedder():
 
         if filename is None:
             filename = "ex%i_%s.mod"
-            now = datetime.now().strftime("%d-%m-%Y, %H:%M:%S")
+            now = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
             filename = filename % (len(self.model.wv), now)
 
         self.model.save(os.path.join(path, filename))
+
+    def get_vectors(self) -> np.ndarray:
+        embeddings = [self.model.wv.get_vector(k) for k in self.model.wv.key_to_index]
+        embeddings = np.stack(embeddings, axis=0)
+        return embeddings
