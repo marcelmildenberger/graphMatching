@@ -77,7 +77,7 @@ class BFEncoder(Encoder):
             assert len(self.ngram_size) == len(data[0]), "Invalid number ("+ str(len(self.ngram_size)) + ") of "\
             "values for ngram_size. Must either be one value or one value per attribute ("+ str(len(data[0])) + ")."
 
-        self.__create_schema()
+        self.__create_schema(data)
         enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
         # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
@@ -106,7 +106,7 @@ class BFEncoder(Encoder):
         pw_metrics = pdist(enc, metric=metric)
         # Convert to similarities if specified
         if sim:
-            pw_metrics = [1 - p for p in pw_metric]
+            pw_metrics = [1 - p for p in pw_metrics]
 
         # Convert to "long" format
         pw_metrics_long = []
