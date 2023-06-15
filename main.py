@@ -4,6 +4,7 @@ import numpy as np
 from utils import *
 from encoders.bf_encoder import BFEncoder
 from embedders.node2vec import N2VEmbedder
+from aligners.wasserstein_procrustes import WassersteinAligner
 
 # Some global parameters
 
@@ -45,6 +46,22 @@ EMB_CONFIG = {
     "Workers": -1
 }
 
+ALIGN_CONFIG = {
+    "Maxload": 200000,
+    "RegWS": 0.9,
+    "RegInit": 0.2,
+    "Batchsize": 800,
+    "LR": 70.0,
+    "NIterWS": 500,
+    "NIterInit": 800,
+    "NEpochWS": 10,
+    "VocabSize": 800,
+    "LRDecay": 0.9,
+    "Sqrt": True,
+    "EarlyStopping": 2,
+    "Verbose": True
+}
+
 # Load and encode Alice's Data
 print("Loading Alice's data")
 alice_data = read_csv(ENC_CONFIG["AliceData"])
@@ -80,24 +97,41 @@ print("Done encoding Data")
 
 print("Start calculating embeddings. This may take a while...")
 print("Embedding Alice's data")
-n2v_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
+alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
                            p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
                            context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
                            seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
 
-n2v_embedder.train("./data/edgelists/alice.edg")
-n2v_embedder.save_model("./data/models", "alice.mod")
+alice_embedder.train("./data/edgelists/alice.edg")
+alice_embedder.save_model("./data/models", "alice.mod")
 
 print("Embedding Eve's data")
-n2v_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
+eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
                            p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
                            context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
                            seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
 
-n2v_embedder.train("./data/edgelists/eve.edg")
-n2v_embedder.save_model("./data/models", "eve.mod")
+eve_embedder.train("./data/edgelists/eve.edg")
+eve_embedder.save_model("./data/models", "eve.mod")
 
 print("Done learning embeddings.")
 
+alice_embeddings = alice_embedder.get_vectors()
+eve_embeddings = eve_embedder.get_vectors()
 
-embeddings = n2v_embedder.get_vectors()
+# Clean up
+del alice_bloom_encoder, eve_bloom_encoder, alice_data, eve_data, alice_enc, eve_enc, alice_embedder, eve_embedder, tres
+
+# Alignment
+print("Aligning vectors. This may take a while.")
+
+aligner = WassersteinAligner(ALIGN_CONFIG["Maxload"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
+                             ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"],ALIGN_CONFIG["NIterInit"],
+                             ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], ALIGN_CONFIG["VocabSize"],
+                             ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
+                             ALIGN_CONFIG["Verbose"])
+
+
+alice_embeddings, eve_embeddings = aligner.align(alice_embeddings, eve_embeddings)
+
+print("Done.")
