@@ -6,6 +6,7 @@ from utils import *
 from encoders.bf_encoder import BFEncoder
 from embedders.node2vec import N2VEmbedder
 from aligners.wasserstein_procrustes import WassersteinAligner
+from matchers.bipartite import MinWeightMatcher
 
 # Some global parameters
 
@@ -51,12 +52,12 @@ ALIGN_CONFIG = {
     "Maxload": 200000,
     "RegWS": 0.9,
     "RegInit": 0.2,
-    "Batchsize": 800,
+    "Batchsize": 500,
     "LR": 70.0,
     "NIterWS": 500,
     "NIterInit": 800,
     "NEpochWS": 10,
-    "VocabSize": 800,
+    "VocabSize": 500,
     "LRDecay": 0.9,
     "Sqrt": True,
     "EarlyStopping": 2,
@@ -104,7 +105,7 @@ alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB
                            seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
 
 alice_embedder.train("./data/edgelists/alice.edg")
-alice_embedder.save_model("./data/models", "alice.mod")
+#alice_embedder.save_model("./data/models", "alice.mod")
 
 print("Embedding Eve's data")
 eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
@@ -113,12 +114,30 @@ eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CON
                            seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
 
 eve_embedder.train("./data/edgelists/eve.edg")
-eve_embedder.save_model("./data/models", "eve.mod")
+#eve_embedder.save_model("./data/models", "eve.mod")
 
 print("Done learning embeddings.")
 
 alice_embeddings = alice_embedder.get_vectors()
 eve_embeddings = eve_embedder.get_vectors()
+
+
+# Ground truth for evaluation
+eve_to_alice = {}
+alice_to_eve = {}
+
+for k in eve_embedder.model.wv.key_to_index:
+
+    if k in alice_embedder.model.wv.key_to_index:
+        eve_to_alice[eve_embedder.model.wv.key_to_index[k]] = alice_embedder.model.wv.key_to_index[k]
+    else:
+        eve_to_alice[eve_embedder.model.wv.key_to_index[k]] = None
+
+for k in alice_embedder.model.wv.key_to_index:
+    if k in eve_embedder.model.wv.key_to_index:
+        alice_to_eve[alice_embedder.model.wv.key_to_index[k]] = eve_embedder.model.wv.key_to_index[k]
+    else:
+        alice_to_eve[alice_embedder.model.wv.key_to_index[k]] = None
 
 # Clean up
 del alice_bloom_encoder, eve_bloom_encoder, alice_data, eve_data, alice_enc, eve_enc, tres
@@ -149,7 +168,22 @@ aligner = WassersteinAligner(ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["RegInit"],
 transformation_matrix = aligner.align(alice_sub, eve_sub)
 
 alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).reshape([-1, 1])
+
 eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
 eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
 
 print("Done.")
+
+print("Performing bipartite graph matching")
+matcher = MinWeightMatcher("cosine")
+mapping = matcher.match(alice_embeddings, eve_embeddings)
+
+# Evaluation
+correct = 0
+for eve, alice in mapping.items():
+    if eve[0] == "X":
+        continue
+    if eve_to_alice[int(eve[2:])] == int(alice[2:]):
+        correct += 1
+
+#correct/len(plain_nodes)
