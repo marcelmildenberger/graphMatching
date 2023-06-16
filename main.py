@@ -1,5 +1,6 @@
 import csv
 import numpy as np
+import networkx as nx
 
 from utils import *
 from encoders.bf_encoder import BFEncoder
@@ -120,18 +121,35 @@ alice_embeddings = alice_embedder.get_vectors()
 eve_embeddings = eve_embedder.get_vectors()
 
 # Clean up
-del alice_bloom_encoder, eve_bloom_encoder, alice_data, eve_data, alice_enc, eve_enc, alice_embedder, eve_embedder, tres
+del alice_bloom_encoder, eve_bloom_encoder, alice_data, eve_data, alice_enc, eve_enc, tres
 
 # Alignment
+
+# Read the edgelists as NetworkX graphs so we can determine the degrees of the nodes.
+edgelist_alice = nx.read_weighted_edgelist("data/edgelists/alice.edg")
+edgelist_eve = nx.read_weighted_edgelist("data/edgelists/eve.edg")
+degrees_alice = sorted(edgelist_alice.degree, key=lambda x: x[1], reverse=True)
+degrees_eve = sorted(edgelist_eve.degree, key=lambda x: x[1], reverse=True)
+
+alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
+eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
+
+alice_sub = np.stack(alice_sub, axis=0)
+eve_sub = np.stack(eve_sub, axis=0)
+
 print("Aligning vectors. This may take a while.")
 
-aligner = WassersteinAligner(ALIGN_CONFIG["Maxload"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
+aligner = WassersteinAligner(ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
                              ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"],ALIGN_CONFIG["NIterInit"],
                              ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], ALIGN_CONFIG["VocabSize"],
                              ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
                              ALIGN_CONFIG["Verbose"])
 
 
-alice_embeddings, eve_embeddings = aligner.align(alice_embeddings, eve_embeddings)
+transformation_matrix = aligner.align(alice_sub, eve_sub)
+
+alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).reshape([-1, 1])
+eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
+eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
 
 print("Done.")

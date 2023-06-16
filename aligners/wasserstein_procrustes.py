@@ -2,7 +2,6 @@ import codecs, sys, time, math, argparse, ot
 import numpy as np
 from tqdm import trange
 from .utils import *
-import networkx as nx
 
 def sqrt_eig(x):
     U, s, VT = np.linalg.svd(x, full_matrices=False)
@@ -45,8 +44,8 @@ class WassersteinAligner():
         if self.early_stopping > 0 and no_improvement >= self.early_stopping:
             print("Objective didn't improve for %i epochs. Stopping..." % self.early_stopping)
             return R
-        for epoch in trange(1, self.n_epoch + 1, desc="Epoch"):
-            for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", leave=False):
+        for epoch in trange(1, self.n_epoch + 1, desc="Epoch", position=1, leave=True):
+            for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", position=0, leave=True):
                 # sample mini-batch
                 xt = self.X[np.random.permutation(self.maxload)[:self.batchsize], :]
                 yt = self.Y[np.random.permutation(self.maxload)[:self.batchsize], :]
@@ -76,9 +75,11 @@ class WassersteinAligner():
 
     def convex_init(self):
         n, d = self.X.shape
+        X_c = self.X
+        Y_c = self.Y
         if self.apply_sqrt:
-            self.X, self.Y = sqrt_eig(self.X), sqrt_eig(self.Y)
-        K_X, K_Y = np.dot(self.X, self.X.T), np.dot(self.Y, self.Y.T)
+            X_c, Y_c = sqrt_eig(self.X), sqrt_eig(self.Y)
+        K_X, K_Y = np.dot(X_c, X_c.T), np.dot(Y_c, Y_c.T)
         K_Y *= np.linalg.norm(K_X) / np.linalg.norm(K_Y)
         K2_X, K2_Y = np.dot(K_X, K_X), np.dot(K_Y, K_Y)
         P = np.ones([n, n]) / float(n)
@@ -89,14 +90,11 @@ class WassersteinAligner():
             P = alpha * q + (1.0 - alpha) * P
         obj = np.linalg.norm(np.dot(P, K_X) - np.dot(K_Y, P))
         print(obj)
-        return procrustes(np.dot(P, self.X), self.Y).T
+        return procrustes(np.dot(P, X_c), Y_c).T
 
     def align(self, src, tgt):
         self.X = src
         self.Y = tgt
-
-        src = src[:self.maxload]
-        tgt = tgt[:self.maxload]
 
         print("\nComputing initial mapping with convex relaxation...")
         t0 = time.time()
@@ -108,8 +106,4 @@ class WassersteinAligner():
         R = self.solve_procrustes(R0)
         print("Done [%03d sec]" % math.floor(time.time() - t0))
 
-        self.X = self.X / np.linalg.norm(self.X, 2, 1).reshape([-1, 1])
-        self.Y = self.Y / np.linalg.norm(self.Y, 2, 1).reshape([-1, 1])
-        self.Y = np.dot(self.Y, R.T)
-
-        return self.X, self.Y
+        return R

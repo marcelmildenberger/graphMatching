@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pecanpy
 
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from gensim.models import Word2Vec
 from datetime import datetime
 class N2VEmbedder():
@@ -55,3 +55,6 @@ class N2VEmbedder():
         embeddings = [self.model.wv.get_vector(k) for k in self.model.wv.key_to_index]
         embeddings = np.stack(embeddings, axis=0)
         return embeddings
+
+    def get_vector(self, key: Union[int, str]) -> np.ndarray:
+        return self.model.wv.get_vector(key)
