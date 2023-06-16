@@ -8,7 +8,7 @@ def sqrt_eig(x):
     return np.dot(U, np.dot(np.diag(np.sqrt(s)), VT))
 
 
-class WassersteinAligner():
+class WassersteinAligner:
 
     def __init__(self, maxload, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, vocab_size, lr_decay,
                  apply_sqrt, early_stopping, seed=42, verbose=True):
@@ -44,7 +44,7 @@ class WassersteinAligner():
         if self.early_stopping > 0 and no_improvement >= self.early_stopping:
             print("Objective didn't improve for %i epochs. Stopping..." % self.early_stopping)
             return R
-        for epoch in trange(1, self.n_epoch + 1, desc="Epoch", position=1, leave=True):
+        for epoch in range(1, self.n_epoch + 1):
             for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", position=0, leave=True):
                 # sample mini-batch
                 xt = self.X[np.random.permutation(self.maxload)[:self.batchsize], :]

@@ -4,3 +4,6 @@ clkhash~=0.18.3
 scipy~=1.10.1
 pecanpy~=2.0.8
 gensim~=4.3.1
+networkx~=3.1
+tqdm~=4.65.0
+scikit-learn~=1.2.2
