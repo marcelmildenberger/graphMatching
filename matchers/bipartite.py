@@ -15,15 +15,15 @@ class MinWeightMatcher():
         self.metric = metric
         self.workers = workers
 
-    def match(self, x, y):
-        pw_dists = pairwise_distances(x, y, metric=self.metric, n_jobs=self.workers)
-        x_nodes = ["X_" + str(k) for k in range(len(x))]
-        y_nodes = ["Y_" + str(k) for k in range(len(y))]
+    def match(self, alice_data, alice_uids, eve_data, eve_uids):
+        pw_dists = pairwise_distances(eve_data, alice_data, metric=self.metric, n_jobs=self.workers)
+        eve_nodes = ["E_" + str(k) for k in eve_uids]
+        alice_nodes = ["A_" + str(k) for k in alice_uids]
         bip_graph = nx.Graph()  # Add nodes with the node attribute "bipartite"
-        bip_graph.add_nodes_from(x_nodes, bipartite=0)
-        bip_graph.add_nodes_from(y_nodes, bipartite=1)
+        bip_graph.add_nodes_from(eve_nodes, bipartite=0)
+        bip_graph.add_nodes_from(alice_nodes, bipartite=1)
         # Add edges with weights
-        for r in range(len(pw_dists)):
-            for s in range(len(pw_dists[r])):
-                bip_graph.add_edge("X_" + str(r), "Y_" + str(s), weight=pw_dists[r][s])
+        for r in range(len(eve_uids)):
+            for s in range(len(alice_uids)):
+                bip_graph.add_edge("E_" + eve_uids[r], "A_" + alice_uids[s], weight=pw_dists[r][s])
         return bipartite.matching.minimum_weight_full_matching(bip_graph, None, "weight")

@@ -84,12 +84,13 @@ class BFEncoder(Encoder):
         enc_data = np.stack([list(barr) for barr in enc_data])
         return enc_data
 
-    def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], metric: str, sim: bool = True) -> List[
-        Tuple[int, int, float]]:
+    def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
+                           metric: str, sim: bool = True) -> List[Tuple[int, int, float]]:
         """
         Encodes the given data using bloom filter encoding (CLKHash), then computes and returns the pairwise
         similarities/distances of the bloom filters as a list of tuples.
         :param data: Data to encode. A list of lists: Inner list represents records with integers or strings as values.
+        :param uids: The uids of the records in the same order as the records in data
         :param metric: Similarity/Distance metric to compute. Any of the ones supported by scipy's pdist.
         :param sim: Choose if similarities (True) or distances (False) should be returned.
         :return: The similarities/distances as a list of tuples: [(i,j,val),...], where i and j are the indices of
@@ -112,6 +113,6 @@ class BFEncoder(Encoder):
         pw_metrics_long = []
         for i in range(len(enc)):
             for j in range(i + 1, len(enc)):
-                pw_metrics_long.append((i, j, pw_metrics[calc_condensed_index(i, j, len(enc))]))
+                pw_metrics_long.append((uids[i], uids[j], pw_metrics[calc_condensed_index(i, j, len(enc))]))
 
         return pw_metrics_long

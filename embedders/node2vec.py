@@ -51,10 +51,12 @@ class N2VEmbedder():
 
         self.model.save(os.path.join(path, filename))
 
-    def get_vectors(self) -> np.ndarray:
-        embeddings = [self.model.wv.get_vector(k) for k in self.model.wv.key_to_index]
+    def get_vectors(self, ordering: List[str] = None) -> np.ndarray:
+        if ordering is None:
+            ordering = [k for k in self.model.wv.key_to_index]
+        embeddings = [self.model.wv.get_vector(k) for k in ordering]
         embeddings = np.stack(embeddings, axis=0)
-        return embeddings
+        return embeddings, ordering
 
     def get_vector(self, key: Union[int, str]) -> np.ndarray:
         return self.model.wv.get_vector(key)

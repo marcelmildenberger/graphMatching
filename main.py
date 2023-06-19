@@ -12,14 +12,14 @@ from matchers.bipartite import MinWeightMatcher
 
 # Configuration for Bloom filters
 ENC_CONFIG = {
-    "AliceData": "./data/alice.csv",
+    "AliceData": "./data/alice.tsv",
     "AliceSecret": "SuperSecretSalt1337",
     "AliceBFLength": 1024,
     "AliceBits": 30,
     "AliceN": 2,
     "AliceMetric": "dice",
     "AliceQuantile": 0.99,
-    "EveData": "./data/eve.csv",
+    "EveData": "./data/eve.tsv",
     "EveSecret": "ATotallyDifferentString",
     "EveBFLength": 1024,
     "EveBits": 30,
@@ -31,8 +31,8 @@ ENC_CONFIG = {
 EMB_CONFIG = {
     "AliceWalkLen":100,
     "AliceNWalks": 20,
-    "AliceP": 0.5,
-    "AliceQ": 2,
+    "AliceP": 0.5, #0.5
+    "AliceQ": 2,    #2
     "AliceDim": 128,
     "AliceContext": 10,
     "AliceEpochs": 30,
@@ -52,12 +52,12 @@ ALIGN_CONFIG = {
     "Maxload": 200000,
     "RegWS": 0.9,
     "RegInit": 0.2,
-    "Batchsize": 500,
+    "Batchsize": 800,
     "LR": 70.0,
     "NIterWS": 500,
     "NIterInit": 800,
     "NEpochWS": 10,
-    "VocabSize": 500,
+    "VocabSize": 800,
     "LRDecay": 0.9,
     "Sqrt": True,
     "EarlyStopping": 2,
@@ -66,12 +66,12 @@ ALIGN_CONFIG = {
 
 # Load and encode Alice's Data
 print("Loading Alice's data")
-alice_data = read_csv(ENC_CONFIG["AliceData"])
+alice_data, alice_uids = read_tsv(ENC_CONFIG["AliceData"])
 alice_bloom_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
                                 ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
 
 print("Encoding Alice's Data")
-alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, metric=ENC_CONFIG["AliceMetric"])
+alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"])
 
 print("Computing Thresholds and subsetting data for Alice")
 tres = np.quantile([e[2] for e in alice_enc], ENC_CONFIG["AliceQuantile"])
@@ -80,12 +80,12 @@ print("Done processing Alice's data")
 
 # Load and encode Eve's Data
 print("Loading Eve's data")
-eve_data = read_csv(ENC_CONFIG["EveData"])
+eve_data, eve_uids = read_tsv(ENC_CONFIG["EveData"])
 eve_bloom_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
                               ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
 
 print("Encoding Eve's Data")
-eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, metric=ENC_CONFIG["EveMetric"])
+eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
 
 print("Computing Thresholds and subsetting data for Alice")
 tres = np.quantile([e[2] for e in eve_enc], ENC_CONFIG["EveQuantile"])
@@ -93,8 +93,8 @@ eve_enc = [e for e in eve_enc if e[2] > tres]
 print("Done processing Eve's data")
 
 print("Storing results")
-save_csv(alice_enc, "data/edgelists/alice.edg")
-save_csv(eve_enc, "data/edgelists/eve.edg")
+save_tsv(alice_enc, "data/edgelists/alice.edg")
+save_tsv(eve_enc, "data/edgelists/eve.edg")
 print("Done encoding Data")
 
 print("Start calculating embeddings. This may take a while...")
@@ -118,26 +118,12 @@ eve_embedder.train("./data/edgelists/eve.edg")
 
 print("Done learning embeddings.")
 
-alice_embeddings = alice_embedder.get_vectors()
-eve_embeddings = eve_embedder.get_vectors()
+#eve_to_alice = read_csv("./data/eve_to_alice.tsv", header=False, as_dict=True)
 
-
-# Ground truth for evaluation
-eve_to_alice = {}
-alice_to_eve = {}
-
-for k in eve_embedder.model.wv.key_to_index:
-
-    if k in alice_embedder.model.wv.key_to_index:
-        eve_to_alice[eve_embedder.model.wv.key_to_index[k]] = alice_embedder.model.wv.key_to_index[k]
-    else:
-        eve_to_alice[eve_embedder.model.wv.key_to_index[k]] = None
-
-for k in alice_embedder.model.wv.key_to_index:
-    if k in eve_embedder.model.wv.key_to_index:
-        alice_to_eve[alice_embedder.model.wv.key_to_index[k]] = eve_embedder.model.wv.key_to_index[k]
-    else:
-        alice_to_eve[alice_embedder.model.wv.key_to_index[k]] = None
+# We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
+# similarity.
+alice_embeddings, alice_uids = alice_embedder.get_vectors()
+eve_embeddings, eve_uids = eve_embedder.get_vectors()
 
 # Clean up
 del alice_bloom_encoder, eve_bloom_encoder, alice_data, eve_data, alice_enc, eve_enc, tres
@@ -176,14 +162,14 @@ print("Done.")
 
 print("Performing bipartite graph matching")
 matcher = MinWeightMatcher("cosine")
-mapping = matcher.match(alice_embeddings, eve_embeddings)
+mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
 
 # Evaluation
 correct = 0
 for eve, alice in mapping.items():
-    if eve[0] == "X":
+    if eve[0] == "A":
         continue
-    if eve_to_alice[int(eve[2:])] == int(alice[2:]):
+    if eve[1:] == alice[1:]:
         correct += 1
 
 #correct/len(plain_nodes)
