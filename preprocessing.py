@@ -31,7 +31,6 @@ alice.to_csv("./data/alice.tsv", index=False, sep="\t")
 eve.to_csv("./data/eve.tsv", index=False, sep = "\t")
 save_csv(ground_truth, "./data/eve_to_alice.tsv")
 
-test = read_csv("./data/eve_to_alice.tsv", header=False, as_dict=True)
 print("Done")
 
 
