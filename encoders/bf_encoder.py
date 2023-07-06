@@ -54,8 +54,10 @@ class BFEncoder(Encoder):
                                                  self.bits_per_feature[i]
                                              ))))
             else:
-                fields.append(IntegerSpec(str(i), FieldHashingProperties(comparator=NgramComparison(2),
-                                                                         strategy=BitsPerFeatureStrategy(30))))
+                fields.append(IntegerSpec(str(i), FieldHashingProperties(comparator=NgramComparison(
+                    self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
+                    strategy=BitsPerFeatureStrategy(self.bits_per_feature if type(self.bits_per_feature) == int else
+                                                    self.bits_per_feature[i]))))
             i += 1
 
         self.schema = Schema(fields, self.filter_size)
@@ -69,13 +71,14 @@ class BFEncoder(Encoder):
         filter.
         """
         if not type(self.bits_per_feature) == int:
-            assert len(self.bits_per_feature) == len(data[0]), "Invalid number ("+ str(len(self.ngram_size)) + ") of " \
-            "values for bits_per_feature. Must either be one value or one value per attribute ("+ str(len(data[0])) + ")."
-
+            assert len(self.bits_per_feature) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
+                                                                                                                "values for bits_per_feature. Must either be one value or one value per attribute (" + str(
+                len(data[0])) + ")."
 
         if not type(self.ngram_size) == int:
-            assert len(self.ngram_size) == len(data[0]), "Invalid number ("+ str(len(self.ngram_size)) + ") of "\
-            "values for ngram_size. Must either be one value or one value per attribute ("+ str(len(data[0])) + ")."
+            assert len(self.ngram_size) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
+                                                                                                          "values for ngram_size. Must either be one value or one value per attribute (" + str(
+                len(data[0])) + ")."
 
         self.__create_schema(data)
         enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays

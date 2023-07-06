@@ -1,14 +1,16 @@
+import numpy as np
 import pandas as pd
 import random
 
 
-OVERLAP = 1.0
+OVERLAP = 1
 
 data = pd.read_csv("./data/feb14.csv")
-data = data.dropna()
-data = data.head(1000)
+#data = data.dropna()
+data.replace(np.nan, "", inplace=True)
+#data = data.head(1000)
 data = data[["given_name", "surname", "date_of_birth"]]
-data = data.astype({'date_of_birth': 'int'})
+data = data.astype({'date_of_birth': 'str'})
 
 
 # Creates a list of the indexes in Eve's dataset

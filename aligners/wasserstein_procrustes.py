@@ -12,7 +12,7 @@ class WassersteinAligner:
 
     def __init__(self, maxload, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, vocab_size, lr_decay,
                  apply_sqrt, early_stopping, seed=42, verbose=True):
-        np.random.seed(seed)
+        #np.random.seed(seed)
         self.maxload = maxload
         self.reg_init = reg_init
         self.reg_ws = reg_ws
@@ -72,8 +72,10 @@ class WassersteinAligner:
 
         return R
 
-
-    def convex_init(self):
+    def convex_init(self, X = None, Y = None):
+        if X is not None or Y is not None:
+            self.X = X
+            self.Y = Y
         n, d = self.X.shape
         X_c = self.X
         Y_c = self.Y
@@ -90,7 +92,7 @@ class WassersteinAligner:
             P = alpha * q + (1.0 - alpha) * P
         obj = np.linalg.norm(np.dot(P, K_X) - np.dot(K_Y, P))
         print(obj)
-        return procrustes(np.dot(P, X_c), Y_c).T
+        return procrustes(np.dot(P, X_c), Y_c).T, obj
 
     def align(self, src, tgt):
         self.X = src
@@ -98,7 +100,7 @@ class WassersteinAligner:
 
         print("\nComputing initial mapping with convex relaxation...")
         t0 = time.time()
-        R0 = self.convex_init()
+        R0, _ = self.convex_init()
         print("Done [%03d sec]" % math.floor(time.time() - t0))
 
         print("\nComputing mapping with Wasserstein Procrustes...")
