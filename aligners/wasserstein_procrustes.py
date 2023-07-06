@@ -76,11 +76,23 @@ class WassersteinAligner:
         if X is not None or Y is not None:
             self.X = X
             self.Y = Y
+
+        # If the two matrices contain a different number of records, reduce the size to the smaller of the two
+        # by random subsampling.
+        if self.X.shape[0] < self.Y.shape[0]:
+            X_c = self.X
+            Y_c = self.Y[np.random.permutation(self.X.shape[0])[:self.X.shape[0]], :]
+        elif self.X.shape[0] > self.Y.shape[0]:
+            X_c = self.X[np.random.permutation(self.Y.shape[0])[:self.Y.shape[0]], :]
+            Y_c = self.Y
+        else:
+            X_c = self.X
+            Y_c = self.Y
+
         n, d = self.X.shape
-        X_c = self.X
-        Y_c = self.Y
+
         if self.apply_sqrt:
-            X_c, Y_c = sqrt_eig(self.X), sqrt_eig(self.Y)
+            X_c, Y_c = sqrt_eig(X_c), sqrt_eig(Y_c)
         K_X, K_Y = np.dot(X_c, X_c.T), np.dot(Y_c, Y_c.T)
         K_Y *= np.linalg.norm(K_X) / np.linalg.norm(K_Y)
         K2_X, K2_Y = np.dot(K_X, K_X), np.dot(K_Y, K_Y)

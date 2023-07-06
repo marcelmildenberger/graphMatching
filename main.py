@@ -1,19 +1,24 @@
-import numpy as np
-import networkx as nx
-import math
+import os
 import pickle
-from tqdm import trange
-from utils import *
-from encoders.bf_encoder import BFEncoder
-from embedders.node2vec import N2VEmbedder
-from aligners.wasserstein_procrustes import WassersteinAligner
-from aligners.closed_form_procrustes import ProcrustesAligner, normalized
-from matchers.bipartite import MinWeightMatcher
+import random
+from hashlib import md5
 
+import networkx as nx
+import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from tqdm import trange
+
+from aligners.closed_form_procrustes import ProcrustesAligner
+from aligners.wasserstein_procrustes import WassersteinAligner
+from embedders.node2vec import N2VEmbedder
+from encoders.bf_encoder import BFEncoder
+from matchers.bipartite import MinWeightMatcher
+from utils import *
 
 # Some global parameters
+DATA = "./data/feb14.tsv"
+OVERLAP = 0.5
 # Development Mode, saves some intermediate results to the /dev directory
 DEV_MODE = True
 # Benchmark Mode
@@ -23,22 +28,18 @@ VERBOSE = True
 
 # Configuration for Bloom filters
 ENC_CONFIG = {
-    "AliceData": "./data/alice.tsv",
     "AliceSecret": "SuperSecretSalt1337",
     "AliceBFLength": 1024,
     "AliceBits": 30,
     "AliceN": 2,
     "AliceMetric": "dice",
-    "AliceQuantile": 0.95, #0.99
-    "AliceDiscretize": False,
-    "EveData": "./data/eve.tsv",
     "EveSecret": "ATotallyDifferentString",
     "EveBFLength": 1024,
     "EveBits": 30,
     "EveN": 2,
     "EveMetric": "dice",
-    "EveQuantile": 0.95, #0.99
-    "EveDiscretize": False
+    "Data": DATA,
+    "Overlap": OVERLAP
 }
 
 EMB_CONFIG = {
@@ -49,6 +50,8 @@ EMB_CONFIG = {
     "AliceDim": 64,
     "AliceContext": 10,
     "AliceEpochs": 30,
+    "AliceQuantile": 0.95,  # 0.99
+    "AliceDiscretize": False,
     "AliceSeed": 42,
     "EveWalkLen": 100,
     "EveNWalks": 20,
@@ -57,20 +60,24 @@ EMB_CONFIG = {
     "EveDim": 64,
     "EveContext": 10,
     "EveEpochs": 30,
+    "EveQuantile": 0.95,  # 0.99
+    "EveDiscretize": False,
     "EveSeed": 42,
-    "Workers": -1
+    "Workers": -1,
+    "Data": DATA,
+    "Overlap": OVERLAP
 }
 
 ALIGN_CONFIG = {
     "Maxload": 200000,
     "RegWS": 0.9,
     "RegInit": 0.2,
-    "Batchsize": 500,
+    "Batchsize": 1000,
     "LR": 70.0,
     "NIterWS": 500,
     "NIterInit": 800, # 800
     "NEpochWS": 15,
-    "VocabSize": 500,
+    "VocabSize": 1000,
     "LRDecay": 0.9,
     "Sqrt": True,
     "EarlyStopping": 2,
@@ -82,107 +89,160 @@ ALIGN_CONFIG = {
 supported_selections = ["Degree", "GroundTruth", "Centroids", "None"]
 assert ALIGN_CONFIG["Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % ((supported_selections))
 
-# Load and encode Alice's Data
-if VERBOSE:
-    print("Loading Alice's data")
-alice_data, alice_uids = read_tsv(ENC_CONFIG["AliceData"])
-alice_bloom_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
-                                ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
+# Compute hashes of configuration to store/load data and thus avoid redundant computations.
+# Using MD5 because Python's native hash() is not stable across processes
+enc_config_hash = md5(str(ENC_CONFIG).encode()).hexdigest()
+emb_config_hash = md5(str(EMB_CONFIG).encode()).hexdigest()
+align_config_hash = md5(str(ALIGN_CONFIG).encode()).hexdigest()
+
+if os.path.isfile("./data/encoded/alice-%s.pck" % enc_config_hash):
+    if VERBOSE:
+        print("Found stored data for Alice's encoded records")
+
+    with open("./data/encoded/alice-%s.pck" % enc_config_hash, "rb") as f:
+        alice_enc = pickle.load(f)
+
+else:
+    # Load and encode Alice's Data
+    if VERBOSE:
+        print("Loading Alice's data")
+    alice_data, alice_uids = read_tsv(DATA)
+
+    # Subset and shuffle
+    selected = random.sample(range(len(alice_data)), int(OVERLAP * len(alice_data)))
+    alice_data = [alice_data[i] for i in selected]
+    alice_uids = [alice_uids[i] for i in selected]
+
+    alice_bloom_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
+                                    ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
+
+    if VERBOSE:
+        print("Encoding Alice's Data")
+    alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"])
+
+    if DEV_MODE:
+        save_tsv(alice_enc, "dev/alice.edg")
+
+    if VERBOSE:
+        print("Done encoding Alice's data")
+
+    with open("./data/encoded/alice-%s.pck" % enc_config_hash, "wb") as f:
+        pickle.dump(alice_enc, f)
+
+
+if os.path.isfile("./data/encoded/eve-%s.pck" % enc_config_hash):
+    if VERBOSE:
+        print("Found stored data for Eve's encoded records")
+
+    with open("./data/encoded/eve-%s.pck" % enc_config_hash, "rb") as f:
+        eve_enc = pickle.load(f)
+else:
+
+    # Load and encode Eve's Data
+    if VERBOSE:
+        print("Loading Eve's data")
+    eve_data, eve_uids = read_tsv(DATA)
+    eve_bloom_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
+                                  ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
+
+    if VERBOSE:
+        print("Encoding Eve's Data")
+    eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
+
+    if DEV_MODE:
+        save_tsv(eve_enc, "dev/eve.edg")
+
+    with open("./data/encoded/eve-%s.pck" % enc_config_hash, "wb") as f:
+        pickle.dump(eve_enc, f)
 
 if VERBOSE:
-    print("Encoding Alice's Data")
-alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"])
+    print("Done encoding Eve's data")
 
-if DEV_MODE:
-    save_tsv(alice_enc, "dev/alice.edg")
+if os.path.isfile("./data/embeddings/alice-%s.pck" % emb_config_hash):
+    if VERBOSE:
+        print("Found stored data for Alices's embeddings")
 
-if VERBOSE:
-    print("Computing Thresholds and subsetting data for Alice")
-# Compute the threshold value for subsetting
-tres = np.quantile([e[2] for e in alice_enc], ENC_CONFIG["AliceQuantile"])
-
-# Only keep edges if their similarity is greater than the threshold
-alice_enc = [e for e in alice_enc if e[2] > tres]
-
-# Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
-if ENC_CONFIG["AliceDiscretize"]:
-    alice_enc = [(e[0], e[1], 1) for e in alice_enc]
-
-if VERBOSE:
-    print("Done processing Alice's data")
-
-# Load and encode Eve's Data
-if VERBOSE:
-    print("Loading Eve's data")
-eve_data, eve_uids = read_tsv(ENC_CONFIG["EveData"])
-eve_bloom_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
-                              ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
-
-if VERBOSE:
-    print("Encoding Eve's Data")
-eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
-
-if DEV_MODE:
-    save_tsv(eve_enc, "dev/eve.edg")
-
-if VERBOSE:
-    print("Computing Thresholds and subsetting data for Alice")
-tres = np.quantile([e[2] for e in eve_enc], ENC_CONFIG["EveQuantile"])
-eve_enc = [e for e in eve_enc if e[2] > tres]
-if ENC_CONFIG["EveDiscretize"]:
-    eve_enc = [(e[0], e[1], 1) for e in eve_enc]
-if VERBOSE:
-    print("Done processing Eve's data")
+    with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "rb") as f:
+        alice_embedder = pickle.load(f)
 
 
-if VERBOSE:
-    print("Storing results")
-save_tsv(alice_enc, "data/edgelists/alice.edg")
-save_tsv(eve_enc, "data/edgelists/eve.edg")
-if VERBOSE:
-    print("Done encoding Data")
+else:
+    if VERBOSE:
+            print("Computing Thresholds and subsetting data for Alice")
+    # Compute the threshold value for subsetting
+    tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
 
-if VERBOSE:
-    print("Start calculating embeddings. This may take a while...")
-    print("Embedding Alice's data")
-alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
-                           p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
-                           context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
-                           seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
+    # Only keep edges if their similarity is greater than the threshold
+    alice_enc = [e for e in alice_enc if e[2] > tres]
 
-alice_embedder.train("./data/edgelists/alice.edg")
+    # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
+    if EMB_CONFIG["AliceDiscretize"]:
+        alice_enc = [(e[0], e[1], 1) for e in alice_enc]
+    if VERBOSE:
+        print("Done processing Alice's data.")
+    save_tsv(alice_enc, "data/edgelists/alice.edg")
 
-if DEV_MODE:
-    alice_embedder.save_model("./dev", "alice.mod")
+    if VERBOSE:
+        print("Embedding Alice's data. This may take a while...")
 
-if VERBOSE:
-    print("Embedding Eve's data")
-eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
-                           p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
-                           context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
-                           seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
+    alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
+                                 p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
+                                 context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
+                                 seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
 
-eve_embedder.train("./data/edgelists/eve.edg")
+    alice_embedder.train("./data/edgelists/alice.edg")
 
-if DEV_MODE:
-    eve_embedder.save_model("./dev", "eve.mod")
+    if DEV_MODE:
+        alice_embedder.save_model("./dev", "alice.mod")
 
-print("Done learning embeddings.")
+    if VERBOSE:
+        print("Done embedding Alice's data.")
 
-# We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
-# similarity.
+    # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
+    # similarity.
+    with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "wb") as f:
+        pickle.dump(alice_embedder, f)
+
 alice_embeddings, alice_uids = alice_embedder.get_vectors()
+
+
+if os.path.isfile("./data/embeddings/eve-%s.pck" % emb_config_hash):
+    if VERBOSE:
+        print("Found stored data for Eve's embeddings")
+
+    with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "rb") as f:
+        eve_embedder = pickle.load(f)
+
+else:
+    if VERBOSE:
+        print("Computing Thresholds and subsetting data for Eve")
+    tres = np.quantile([e[2] for e in eve_enc], EMB_CONFIG["EveQuantile"])
+    eve_enc = [e for e in eve_enc if e[2] > tres]
+    if EMB_CONFIG["EveDiscretize"]:
+        eve_enc = [(e[0], e[1], 1) for e in eve_enc]
+    if VERBOSE:
+        print("Done processing Eve's data.")
+
+    save_tsv(eve_enc, "data/edgelists/eve.edg")
+
+    if VERBOSE:
+        print("Embedding Eve's data. This may take a while...")
+    eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
+                               p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
+                               context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
+                               seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
+
+    eve_embedder.train("./data/edgelists/eve.edg")
+
+    if DEV_MODE:
+        eve_embedder.save_model("./dev", "eve.mod")
+
+    print("Done embedding Eve's .")
+
+    with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "wb") as f:
+        pickle.dump(eve_embedder, f)
+
 eve_embeddings, eve_uids = eve_embedder.get_vectors()
-
-if DEV_MODE:
-    with open("./dev/alice_emb.pck", "wb") as f:
-        pickle.dump((alice_embeddings, alice_uids), f)
-
-    with open("./dev/eve_emb.pck", "wb") as f:
-        pickle.dump((eve_embeddings, eve_uids), f)
-
-# Clean up
-del alice_bloom_encoder, eve_bloom_encoder, alice_data, eve_data, alice_enc, eve_enc, tres
 
 # Alignment
 
