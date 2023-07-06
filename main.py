@@ -1,6 +1,7 @@
 import os
 import pickle
 import random
+import time
 from hashlib import md5
 
 import networkx as nx
@@ -18,9 +19,9 @@ from utils import *
 
 # Some global parameters
 DATA = "./data/feb14.tsv"
-OVERLAP = 0.5
+OVERLAP = 0.80
 # Development Mode, saves some intermediate results to the /dev directory
-DEV_MODE = True
+DEV_MODE = False
 # Benchmark Mode
 BENCH_MODE = True
 # Print Status Messages?
@@ -89,6 +90,9 @@ ALIGN_CONFIG = {
 supported_selections = ["Degree", "GroundTruth", "Centroids", "None"]
 assert ALIGN_CONFIG["Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % ((supported_selections))
 
+if BENCH_MODE:
+    start_total = time.time()
+
 # Compute hashes of configuration to store/load data and thus avoid redundant computations.
 # Using MD5 because Python's native hash() is not stable across processes
 enc_config_hash = md5(str(ENC_CONFIG).encode()).hexdigest()
@@ -100,18 +104,26 @@ if os.path.isfile("./data/encoded/alice-%s.pck" % enc_config_hash):
         print("Found stored data for Alice's encoded records")
 
     with open("./data/encoded/alice-%s.pck" % enc_config_hash, "rb") as f:
-        alice_enc = pickle.load(f)
+        alice_enc, n_alice = pickle.load(f)
+
+    if BENCH_MODE:
+        elapsed_alice_enc = -1
 
 else:
     # Load and encode Alice's Data
     if VERBOSE:
         print("Loading Alice's data")
+
     alice_data, alice_uids = read_tsv(DATA)
+    n_alice = len(alice_uids) # Initial number of records in alices dataset. Required for success calculation
 
     # Subset and shuffle
     selected = random.sample(range(len(alice_data)), int(OVERLAP * len(alice_data)))
     alice_data = [alice_data[i] for i in selected]
     alice_uids = [alice_uids[i] for i in selected]
+
+    if BENCH_MODE:
+        start_alice_enc = time.time()
 
     alice_bloom_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
                                     ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
@@ -120,6 +132,9 @@ else:
         print("Encoding Alice's Data")
     alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"])
 
+    if BENCH_MODE:
+        elapsed_alice_enc = time.time() - start_alice_enc
+
     if DEV_MODE:
         save_tsv(alice_enc, "dev/alice.edg")
 
@@ -127,7 +142,7 @@ else:
         print("Done encoding Alice's data")
 
     with open("./data/encoded/alice-%s.pck" % enc_config_hash, "wb") as f:
-        pickle.dump(alice_enc, f)
+        pickle.dump((alice_enc, n_alice), f)
 
 
 if os.path.isfile("./data/encoded/eve-%s.pck" % enc_config_hash):
@@ -135,25 +150,37 @@ if os.path.isfile("./data/encoded/eve-%s.pck" % enc_config_hash):
         print("Found stored data for Eve's encoded records")
 
     with open("./data/encoded/eve-%s.pck" % enc_config_hash, "rb") as f:
-        eve_enc = pickle.load(f)
+        eve_enc, n_eve = pickle.load(f)
+
+    if BENCH_MODE:
+        elapsed_eve_enc = -1
 else:
 
     # Load and encode Eve's Data
     if VERBOSE:
         print("Loading Eve's data")
     eve_data, eve_uids = read_tsv(DATA)
+    n_eve = len(eve_uids)
+
+    if BENCH_MODE:
+        start_eve_enc = time.time()
+
     eve_bloom_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
                                   ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
 
     if VERBOSE:
         print("Encoding Eve's Data")
+
     eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
+
+    if BENCH_MODE:
+        elapsed_eve_enc = time.time() - start_eve_enc
 
     if DEV_MODE:
         save_tsv(eve_enc, "dev/eve.edg")
 
     with open("./data/encoded/eve-%s.pck" % enc_config_hash, "wb") as f:
-        pickle.dump(eve_enc, f)
+        pickle.dump((eve_enc, n_eve), f)
 
 if VERBOSE:
     print("Done encoding Eve's data")
@@ -165,10 +192,16 @@ if os.path.isfile("./data/embeddings/alice-%s.pck" % emb_config_hash):
     with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "rb") as f:
         alice_embedder = pickle.load(f)
 
+    if BENCH_MODE:
+        elapsed_alice_emb = -1
 
 else:
     if VERBOSE:
             print("Computing Thresholds and subsetting data for Alice")
+
+    if BENCH_MODE:
+        start_alice_emb = time.time()
+
     # Compute the threshold value for subsetting
     tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
 
@@ -192,6 +225,9 @@ else:
 
     alice_embedder.train("./data/edgelists/alice.edg")
 
+    if BENCH_MODE:
+        elapsed_alice_emb = time.time() - start_alice_emb
+
     if DEV_MODE:
         alice_embedder.save_model("./dev", "alice.mod")
 
@@ -213,9 +249,16 @@ if os.path.isfile("./data/embeddings/eve-%s.pck" % emb_config_hash):
     with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "rb") as f:
         eve_embedder = pickle.load(f)
 
+    if BENCH_MODE:
+        elapsed_eve_emb = -1
+
 else:
     if VERBOSE:
         print("Computing Thresholds and subsetting data for Eve")
+
+    if BENCH_MODE:
+        start_eve_emb = time.time()
+
     tres = np.quantile([e[2] for e in eve_enc], EMB_CONFIG["EveQuantile"])
     eve_enc = [e for e in eve_enc if e[2] > tres]
     if EMB_CONFIG["EveDiscretize"]:
@@ -234,6 +277,9 @@ else:
 
     eve_embedder.train("./data/edgelists/eve.edg")
 
+    if BENCH_MODE:
+        elapsed_eve_emb = time.time() - start_eve_emb
+
     if DEV_MODE:
         eve_embedder.save_model("./dev", "eve.mod")
 
@@ -245,6 +291,8 @@ else:
 eve_embeddings, eve_uids = eve_embedder.get_vectors()
 
 # Alignment
+if BENCH_MODE:
+    start_align_prep = time.time()
 
 if ALIGN_CONFIG["Selection"] == "Degree":
     # Read the edgelists as NetworkX graphs so we can determine the degrees of the nodes.
@@ -296,6 +344,10 @@ if ALIGN_CONFIG["Selection"] in ["Degree", "GroundTruth"]:
     alice_sub = np.stack(alice_sub, axis=0)
     eve_sub = np.stack(eve_sub, axis=0)
 
+if BENCH_MODE:
+    elapsed_align_prep = time.time() - start_align_prep
+    start_align = time.time()
+
 if VERBOSE:
     print("Aligning vectors. This may take a while.")
 
@@ -332,6 +384,8 @@ alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).res
 eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
 eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
 
+if BENCH_MODE:
+    elapsed_align = time.time() - start_align
 # alice_embeddings = normalized(alice_embeddings)
 # eve_embeddings = normalized(eve_embeddings)
 # eve_embeddings = np.matmul(eve_embeddings, transformation_matrix)
@@ -340,8 +394,14 @@ if VERBOSE:
     print("Done.")
     print("Performing bipartite graph matching")
 
+if BENCH_MODE:
+    start_mapping = time.time()
+
 matcher = MinWeightMatcher("cosine")
 mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
+
+if BENCH_MODE:
+    elapsed_mapping = time.time() - start_mapping
 
 # Evaluation
 correct = 0
@@ -351,4 +411,24 @@ for eve, alice in mapping.items():
     if eve[1:] == alice[1:]:
         correct += 1
 
-print(correct/len(alice_uids))
+success_rate = correct/n_alice
+print(success_rate)
+
+if BENCH_MODE:
+    elapsed_total = time.time() - start_total
+    keys = ["timestamp"]
+    vals = [time.time()]
+    for key, val in EMB_CONFIG.items():
+        keys.append(key)
+        vals.append(val)
+
+    keys += ["success_rate","correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
+             "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping"]
+
+    vals += [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
+             elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping]
+
+    if not os.path.isfile("./data/benchmark.tsv"):
+        save_tsv([keys], "./data/benchmark.tsv")
+
+    save_tsv([vals], "./data/benchmark.tsv", mode="a")

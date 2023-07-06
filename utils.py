@@ -19,7 +19,7 @@ def read_tsv(path: str, header: bool = True, as_dict: bool = False, delim: str =
     return data, uid
 
 
-def save_tsv(data, path: str, delim: str = "\t"):
-    with open(path, "w", newline="") as f:
+def save_tsv(data, path: str, delim: str = "\t", mode="w"):
+    with open(path, mode, newline="") as f:
         csvwriter = csv.writer(f, delimiter=delim)
         csvwriter.writerows(data)
