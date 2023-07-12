@@ -3,12 +3,11 @@ import pandas as pd
 import random
 
 
-#OVERLAP = 0.5
+#OVERLAP = 1
 
 data = pd.read_csv("./data/feb14.csv")
 #data = data.dropna()
 data.replace(np.nan, "", inplace=True)
-data = data.head(2000)
 data = data[["given_name", "surname", "date_of_birth"]]
 data = data.astype({'date_of_birth': 'str'})
 
@@ -20,10 +19,12 @@ data["uid"] = ind
 #eve = data
 
 # Random sampling: Shuffle and select the first n=OVERLAP*len(ind) entries
-#random.shuffle(ind)
+random.shuffle(ind)
 #ind = ind[:int(OVERLAP*len(ind))]
-#alice = eve.iloc[ind]
+data = data.iloc[ind]
+data = data.head(2000)
 
+#data["uid"] = data["uid"] + 100
 
 # Save data
 data.to_csv("./data/feb14.tsv", index=False, sep="\t")

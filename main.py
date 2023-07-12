@@ -6,6 +6,7 @@ from hashlib import md5
 
 import networkx as nx
 import numpy as np
+import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from tqdm import trange
@@ -17,191 +18,67 @@ from encoders.bf_encoder import BFEncoder
 from matchers.bipartite import MinWeightMatcher
 from utils import *
 
-# Some global parameters
-DATA = "./data/feb14.tsv"
-OVERLAP = 0.80
-# Development Mode, saves some intermediate results to the /dev directory
-DEV_MODE = False
-# Benchmark Mode
-BENCH_MODE = True
-# Print Status Messages?
-VERBOSE = True
+def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
-# Configuration for Bloom filters
-ENC_CONFIG = {
-    "AliceSecret": "SuperSecretSalt1337",
-    "AliceBFLength": 1024,
-    "AliceBits": 30,
-    "AliceN": 2,
-    "AliceMetric": "dice",
-    "EveSecret": "ATotallyDifferentString",
-    "EveBFLength": 1024,
-    "EveBits": 30,
-    "EveN": 2,
-    "EveMetric": "dice",
-    "Data": DATA,
-    "Overlap": OVERLAP
-}
+    supported_selections = ["Degree", "GroundTruth", "Centroids", "None"]
+    assert ALIGN_CONFIG["Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % ((supported_selections))
 
-EMB_CONFIG = {
-    "AliceWalkLen":100,
-    "AliceNWalks": 20,
-    "AliceP": 0.5, #0.5
-    "AliceQ": 2,    #2
-    "AliceDim": 64,
-    "AliceContext": 10,
-    "AliceEpochs": 30,
-    "AliceQuantile": 0.95,  # 0.99
-    "AliceDiscretize": False,
-    "AliceSeed": 42,
-    "EveWalkLen": 100,
-    "EveNWalks": 20,
-    "EveP": 0.5, #0.5
-    "EveQ": 2, #2
-    "EveDim": 64,
-    "EveContext": 10,
-    "EveEpochs": 30,
-    "EveQuantile": 0.95,  # 0.99
-    "EveDiscretize": False,
-    "EveSeed": 42,
-    "Workers": -1,
-    "Data": DATA,
-    "Overlap": OVERLAP
-}
+    if GLOBAL_CONFIG["BenchMode"]:
+        start_total = time.time()
 
-ALIGN_CONFIG = {
-    "Maxload": 200000,
-    "RegWS": 0.9,
-    "RegInit": 0.2,
-    "Batchsize": 1000,
-    "LR": 70.0,
-    "NIterWS": 500,
-    "NIterInit": 800, # 800
-    "NEpochWS": 15,
-    "VocabSize": 1000,
-    "LRDecay": 0.9,
-    "Sqrt": True,
-    "EarlyStopping": 2,
-    "Selection": "Degree",
-    "Wasserstein": True,
-    "Verbose": VERBOSE
-}
+    # Compute hashes of configuration to store/load data and thus avoid redundant computations.
+    # Using MD5 because Python's native hash() is not stable across processes
+    enc_config_hash = md5(str(ENC_CONFIG).encode()).hexdigest()
+    emb_config_hash = md5(str(EMB_CONFIG).encode()).hexdigest()
+    align_config_hash = md5(str(ALIGN_CONFIG).encode()).hexdigest()
 
-supported_selections = ["Degree", "GroundTruth", "Centroids", "None"]
-assert ALIGN_CONFIG["Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % ((supported_selections))
+    if os.path.isfile("./data/encoded/alice-%s.pck" % enc_config_hash):
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Found stored data for Alice's encoded records")
 
-if BENCH_MODE:
-    start_total = time.time()
+        with open("./data/encoded/alice-%s.pck" % enc_config_hash, "rb") as f:
+            alice_enc, n_alice = pickle.load(f)
 
-# Compute hashes of configuration to store/load data and thus avoid redundant computations.
-# Using MD5 because Python's native hash() is not stable across processes
-enc_config_hash = md5(str(ENC_CONFIG).encode()).hexdigest()
-emb_config_hash = md5(str(EMB_CONFIG).encode()).hexdigest()
-align_config_hash = md5(str(ALIGN_CONFIG).encode()).hexdigest()
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_alice_enc = -1
 
-if os.path.isfile("./data/encoded/alice-%s.pck" % enc_config_hash):
-    if VERBOSE:
-        print("Found stored data for Alice's encoded records")
+    else:
+        # Load and encode Alice's Data
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Loading Alice's data")
 
-    with open("./data/encoded/alice-%s.pck" % enc_config_hash, "rb") as f:
-        alice_enc, n_alice = pickle.load(f)
+        alice_data, alice_uids = read_tsv(GLOBAL_CONFIG["Data"])
 
-    if BENCH_MODE:
-        elapsed_alice_enc = -1
+        # Subset and shuffle
+        selected = random.sample(range(len(alice_data)), int(GLOBAL_CONFIG["Overlap"] * len(alice_data)))
+        alice_data = [alice_data[i] for i in selected]
+        alice_uids = [alice_uids[i] for i in selected]
+        n_alice = len(alice_uids) # Initial number of records in alice's dataset. Required for success calculation
 
-else:
-    # Load and encode Alice's Data
-    if VERBOSE:
-        print("Loading Alice's data")
+        if GLOBAL_CONFIG["BenchMode"]:
+            start_alice_enc = time.time()
 
-    alice_data, alice_uids = read_tsv(DATA)
-    n_alice = len(alice_uids) # Initial number of records in alices dataset. Required for success calculation
+        alice_bloom_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
+                                        ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
 
-    # Subset and shuffle
-    selected = random.sample(range(len(alice_data)), int(OVERLAP * len(alice_data)))
-    alice_data = [alice_data[i] for i in selected]
-    alice_uids = [alice_uids[i] for i in selected]
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Encoding Alice's Data")
+        alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"])
 
-    if BENCH_MODE:
-        start_alice_enc = time.time()
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_alice_enc = time.time() - start_alice_enc
 
-    alice_bloom_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
-                                    ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
+        if GLOBAL_CONFIG["DevMode"]:
+            save_tsv(alice_enc, "dev/alice.edg")
 
-    if VERBOSE:
-        print("Encoding Alice's Data")
-    alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"])
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Done encoding Alice's data")
 
-    if BENCH_MODE:
-        elapsed_alice_enc = time.time() - start_alice_enc
+        with open("./data/encoded/alice-%s.pck" % enc_config_hash, "wb") as f:
+            pickle.dump((alice_enc, n_alice), f)
 
-    if DEV_MODE:
-        save_tsv(alice_enc, "dev/alice.edg")
-
-    if VERBOSE:
-        print("Done encoding Alice's data")
-
-    with open("./data/encoded/alice-%s.pck" % enc_config_hash, "wb") as f:
-        pickle.dump((alice_enc, n_alice), f)
-
-
-if os.path.isfile("./data/encoded/eve-%s.pck" % enc_config_hash):
-    if VERBOSE:
-        print("Found stored data for Eve's encoded records")
-
-    with open("./data/encoded/eve-%s.pck" % enc_config_hash, "rb") as f:
-        eve_enc, n_eve = pickle.load(f)
-
-    if BENCH_MODE:
-        elapsed_eve_enc = -1
-else:
-
-    # Load and encode Eve's Data
-    if VERBOSE:
-        print("Loading Eve's data")
-    eve_data, eve_uids = read_tsv(DATA)
-    n_eve = len(eve_uids)
-
-    if BENCH_MODE:
-        start_eve_enc = time.time()
-
-    eve_bloom_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
-                                  ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
-
-    if VERBOSE:
-        print("Encoding Eve's Data")
-
-    eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
-
-    if BENCH_MODE:
-        elapsed_eve_enc = time.time() - start_eve_enc
-
-    if DEV_MODE:
-        save_tsv(eve_enc, "dev/eve.edg")
-
-    with open("./data/encoded/eve-%s.pck" % enc_config_hash, "wb") as f:
-        pickle.dump((eve_enc, n_eve), f)
-
-if VERBOSE:
-    print("Done encoding Eve's data")
-
-if os.path.isfile("./data/embeddings/alice-%s.pck" % emb_config_hash):
-    if VERBOSE:
-        print("Found stored data for Alices's embeddings")
-
-    with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "rb") as f:
-        alice_embedder = pickle.load(f)
-
-    if BENCH_MODE:
-        elapsed_alice_emb = -1
-
-else:
-    if VERBOSE:
+    if GLOBAL_CONFIG["Verbose"]:
             print("Computing Thresholds and subsetting data for Alice")
-
-    if BENCH_MODE:
-        start_alice_emb = time.time()
-
     # Compute the threshold value for subsetting
     tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
 
@@ -211,224 +88,398 @@ else:
     # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
     if EMB_CONFIG["AliceDiscretize"]:
         alice_enc = [(e[0], e[1], 1) for e in alice_enc]
-    if VERBOSE:
+
+    if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Alice's data.")
-    save_tsv(alice_enc, "data/edgelists/alice.edg")
 
-    if VERBOSE:
-        print("Embedding Alice's data. This may take a while...")
+    if os.path.isfile("./data/encoded/eve-%s.pck" % enc_config_hash):
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Found stored data for Eve's encoded records")
 
-    alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
-                                 p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
-                                 context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
-                                 seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
+        with open("./data/encoded/eve-%s.pck" % enc_config_hash, "rb") as f:
+            eve_enc, n_eve = pickle.load(f)
 
-    alice_embedder.train("./data/edgelists/alice.edg")
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_eve_enc = -1
+    else:
 
-    if BENCH_MODE:
-        elapsed_alice_emb = time.time() - start_alice_emb
+        # Load and encode Eve's Data
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Loading Eve's data")
+        eve_data, eve_uids = read_tsv(GLOBAL_CONFIG["Data"])
 
-    if DEV_MODE:
-        alice_embedder.save_model("./dev", "alice.mod")
+        selected = random.sample(range(len(eve_data)), len(eve_data))
+        eve_data = [eve_data[i] for i in selected]
+        eve_uids = [eve_uids[i] for i in selected]
 
-    if VERBOSE:
-        print("Done embedding Alice's data.")
+        n_eve = len(eve_uids)
 
-    # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
-    # similarity.
-    with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "wb") as f:
-        pickle.dump(alice_embedder, f)
+        if GLOBAL_CONFIG["BenchMode"]:
+            start_eve_enc = time.time()
 
-alice_embeddings, alice_uids = alice_embedder.get_vectors()
+        eve_bloom_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
+                                      ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
 
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Encoding Eve's Data")
 
-if os.path.isfile("./data/embeddings/eve-%s.pck" % emb_config_hash):
-    if VERBOSE:
-        print("Found stored data for Eve's embeddings")
+        eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
 
-    with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "rb") as f:
-        eve_embedder = pickle.load(f)
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_eve_enc = time.time() - start_eve_enc
 
-    if BENCH_MODE:
-        elapsed_eve_emb = -1
+        if GLOBAL_CONFIG["DevMode"]:
+            save_tsv(eve_enc, "dev/eve.edg")
 
-else:
-    if VERBOSE:
+        with open("./data/encoded/eve-%s.pck" % enc_config_hash, "wb") as f:
+            pickle.dump((eve_enc, n_eve), f)
+
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Done encoding Eve's data")
+
+    if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
-
-    if BENCH_MODE:
-        start_eve_emb = time.time()
 
     tres = np.quantile([e[2] for e in eve_enc], EMB_CONFIG["EveQuantile"])
     eve_enc = [e for e in eve_enc if e[2] > tres]
+
     if EMB_CONFIG["EveDiscretize"]:
         eve_enc = [(e[0], e[1], 1) for e in eve_enc]
-    if VERBOSE:
+
+    if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Eve's data.")
 
-    save_tsv(eve_enc, "data/edgelists/eve.edg")
+    if os.path.isfile("./data/embeddings/alice-%s.pck" % emb_config_hash):
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Found stored data for Alice's embeddings")
 
-    if VERBOSE:
-        print("Embedding Eve's data. This may take a while...")
-    eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
-                               p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
-                               context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
-                               seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
+        with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "rb") as f:
+            alice_embedder = pickle.load(f)
 
-    eve_embedder.train("./data/edgelists/eve.edg")
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_alice_emb = -1
 
-    if BENCH_MODE:
-        elapsed_eve_emb = time.time() - start_eve_emb
+    else:
 
-    if DEV_MODE:
-        eve_embedder.save_model("./dev", "eve.mod")
+        if GLOBAL_CONFIG["BenchMode"]:
+            start_alice_emb = time.time()
 
-    print("Done embedding Eve's .")
+        # # Compute the threshold value for subsetting
+        # tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
+        #
+        # # Only keep edges if their similarity is greater than the threshold
+        # alice_enc = [e for e in alice_enc if e[2] > tres]
+        #
+        # # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
+        # if EMB_CONFIG["AliceDiscretize"]:
+        #     alice_enc = [(e[0], e[1], 1) for e in alice_enc]
 
-    with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "wb") as f:
-        pickle.dump(eve_embedder, f)
+        save_tsv(alice_enc, "data/edgelists/alice.edg")
 
-eve_embeddings, eve_uids = eve_embedder.get_vectors()
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Embedding Alice's data. This may take a while...")
 
-# Alignment
-if BENCH_MODE:
-    start_align_prep = time.time()
+        alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
+                                     p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
+                                     context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
+                                     seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
 
-if ALIGN_CONFIG["Selection"] == "Degree":
-    # Read the edgelists as NetworkX graphs so we can determine the degrees of the nodes.
-    edgelist_alice = nx.read_weighted_edgelist("data/edgelists/alice.edg")
-    edgelist_eve = nx.read_weighted_edgelist("data/edgelists/eve.edg")
-    degrees_alice = sorted(edgelist_alice.degree, key=lambda x: x[1], reverse=True)
-    degrees_eve = sorted(edgelist_eve.degree, key=lambda x: x[1], reverse=True)
-    alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
-    eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
+        alice_embedder.train("./data/edgelists/alice.edg")
 
-elif ALIGN_CONFIG["Selection"] == "GroundTruth":
-    alice_sub = [alice_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
-    eve_sub = [eve_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_alice_emb = time.time() - start_alice_emb
 
-elif ALIGN_CONFIG["Selection"] == "Centroids":
-    sil = []
-    kmax = 300
-    print("Determining optimal number of clusters K.")
-    for k in trange(2, kmax + 1, 1):
-        kmeans = KMeans(n_clusters=k, random_state=0, n_init=50).fit(alice_embeddings)
-        labels = kmeans.labels_
-        sil.append((k, silhouette_score(alice_embeddings, labels, metric='euclidean')))
+        if GLOBAL_CONFIG["DevMode"]:
+            alice_embedder.save_model("./dev", "alice.mod")
 
-    tmp = 0
-    optimal_k = 0
-    for s in sil:
-        if s[1] > tmp:
-            tmp = s[1]
-            optimal_k = s[0]
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Done embedding Alice's data.")
 
-    if VERBOSE:
-        print("Optimal K is %i with silhouette %f" % (optimal_k, tmp))
+        # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
+        # similarity.
+        with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "wb") as f:
+            pickle.dump(alice_embedder, f)
 
-    ALIGN_CONFIG["Batchsize"] = optimal_k
-    ALIGN_CONFIG["VocabSize"] = optimal_k
+    alice_embeddings, alice_uids = alice_embedder.get_vectors()
 
-    kmeans_alice = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(alice_embeddings)
-    kmeans_eve = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(eve_embeddings)
 
-    alice_sub = kmeans_alice.cluster_centers_
-    eve_sub = kmeans_eve.cluster_centers_
+    if os.path.isfile("./data/embeddings/eve-%s.pck" % emb_config_hash):
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Found stored data for Eve's embeddings")
 
-else:
-    alice_sub = alice_embeddings
-    eve_sub = eve_embeddings
-    #eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], ALIGN_CONFIG["Batchsize"], replace=False), :]
+        with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "rb") as f:
+            eve_embedder = pickle.load(f)
 
-if ALIGN_CONFIG["Selection"] in ["Degree", "GroundTruth"]:
-    alice_sub = np.stack(alice_sub, axis=0)
-    eve_sub = np.stack(eve_sub, axis=0)
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_eve_emb = -1
 
-if BENCH_MODE:
-    elapsed_align_prep = time.time() - start_align_prep
-    start_align = time.time()
+    else:
 
-if VERBOSE:
-    print("Aligning vectors. This may take a while.")
+        if GLOBAL_CONFIG["BenchMode"]:
+            start_eve_emb = time.time()
 
-if ALIGN_CONFIG["Wasserstein"]:
-    aligner = WassersteinAligner(ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
-                                  ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"],ALIGN_CONFIG["NIterInit"],
-                                  ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], ALIGN_CONFIG["VocabSize"],
-                                  ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
-                                  ALIGN_CONFIG["Verbose"])
-else:
-    aligner = ProcrustesAligner()
+        # if GLOBAL_CONFIG["Verbose"]:
+        #     print("Computing Thresholds and subsetting data for Eve")
+        #
+        # if GLOBAL_CONFIG["BenchMode"]:
+        #     start_eve_emb = time.time()
+        #
+        # tres = np.quantile([e[2] for e in eve_enc], EMB_CONFIG["EveQuantile"])
+        # eve_enc = [e for e in eve_enc if e[2] > tres]
+        # if EMB_CONFIG["EveDiscretize"]:
+        #     eve_enc = [(e[0], e[1], 1) for e in eve_enc]
+        #
+        # if GLOBAL_CONFIG["Verbose"]:
+        #     print("Done processing Eve's data.")
 
-transformation_matrix = aligner.align(alice_sub, eve_sub)
+        save_tsv(eve_enc, "data/edgelists/eve.edg")
 
-# with open("./dev/list.pck", "rb") as f:
-#     selected = pickle.load(f)
-#
-# alice_sub = alice_embeddings
-# eve_sub = eve_embeddings[selected, :]
-#
-# min_criterion = math.inf
-# best_eve_sub = None
-#
-# for i in range(20):
-#     eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], ALIGN_CONFIG["Batchsize"], replace=False), :]
-#     _, tmp = aligner.convex_init(alice_sub, eve_sub)
-#     if tmp < min_criterion:
-#         print("Found new best matching subset: " + str(tmp))
-#         min_criterion = tmp
-#         best_eve_sub = eve_sub
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Embedding Eve's data. This may take a while...")
+        eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
+                                   p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
+                                   context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
+                                   seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
 
-alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).reshape([-1, 1])
+        eve_embedder.train("./data/edgelists/eve.edg")
 
-eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
-eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
+        if GLOBAL_CONFIG["BenchMode"]:
+            elapsed_eve_emb = time.time() - start_eve_emb
 
-if BENCH_MODE:
-    elapsed_align = time.time() - start_align
-# alice_embeddings = normalized(alice_embeddings)
-# eve_embeddings = normalized(eve_embeddings)
-# eve_embeddings = np.matmul(eve_embeddings, transformation_matrix)
+        if GLOBAL_CONFIG["DevMode"]:
+            eve_embedder.save_model("./dev", "eve.mod")
 
-if VERBOSE:
-    print("Done.")
-    print("Performing bipartite graph matching")
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Done embedding Eve's data.")
 
-if BENCH_MODE:
-    start_mapping = time.time()
+        with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "wb") as f:
+            pickle.dump(eve_embedder, f)
 
-matcher = MinWeightMatcher("cosine")
-mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
+    eve_embeddings, eve_uids = eve_embedder.get_vectors()
 
-if BENCH_MODE:
-    elapsed_mapping = time.time() - start_mapping
+    # Alignment
+    if GLOBAL_CONFIG["BenchMode"]:
+        start_align_prep = time.time()
 
-# Evaluation
-correct = 0
-for eve, alice in mapping.items():
-    if eve[0] == "A":
-        continue
-    if eve[1:] == alice[1:]:
-        correct += 1
+    if ALIGN_CONFIG["Selection"] == "Degree":
+        # Read the edgelists as NetworkX graphs so we can determine the degrees of the nodes.
+        #edgelist_alice = nx.read_weighted_edgelist("data/edgelists/alice.edg")
+        #edgelist_eve = nx.read_weighted_edgelist("data/edgelists/eve.edg")
+        edgelist_alice = nx.from_pandas_edgelist(pd.DataFrame(alice_enc, columns=["source","target","weight"]), edge_attr=True)
+        edgelist_eve = nx.from_pandas_edgelist(pd.DataFrame(eve_enc, columns=["source","target","weight"]), edge_attr=True)
+        degrees_alice = sorted(edgelist_alice.degree, key=lambda x: x[1], reverse=True)
+        degrees_eve = sorted(edgelist_eve.degree, key=lambda x: x[1], reverse=True)
+        # TODO: Find better Heuristic
+        #ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids)) - 1
+        #ALIGN_CONFIG["VocabSize"] = min(len(alice_uids), len(eve_uids)) - 1
 
-success_rate = correct/n_alice
-print(success_rate)
+        alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
+        eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
 
-if BENCH_MODE:
-    elapsed_total = time.time() - start_total
-    keys = ["timestamp"]
-    vals = [time.time()]
-    for key, val in EMB_CONFIG.items():
-        keys.append(key)
-        vals.append(val)
 
-    keys += ["success_rate","correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
-             "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping"]
+    elif ALIGN_CONFIG["Selection"] == "GroundTruth":
+        alice_sub = [alice_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
+        eve_sub = [eve_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
 
-    vals += [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
-             elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping]
+    elif ALIGN_CONFIG["Selection"] == "Centroids":
+        sil = []
+        kmax = 300
+        print("Determining optimal number of clusters K.")
+        for k in trange(2, kmax + 1, 1):
+            kmeans = KMeans(n_clusters=k, random_state=0, n_init=50).fit(alice_embeddings)
+            labels = kmeans.labels_
+            sil.append((k, silhouette_score(alice_embeddings, labels, metric='euclidean')))
 
-    if not os.path.isfile("./data/benchmark.tsv"):
-        save_tsv([keys], "./data/benchmark.tsv")
+        tmp = 0
+        optimal_k = 0
+        for s in sil:
+            if s[1] > tmp:
+                tmp = s[1]
+                optimal_k = s[0]
 
-    save_tsv([vals], "./data/benchmark.tsv", mode="a")
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Optimal K is %i with silhouette %f" % (optimal_k, tmp))
+
+        ALIGN_CONFIG["Batchsize"] = optimal_k
+        ALIGN_CONFIG["VocabSize"] = optimal_k
+
+        kmeans_alice = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(alice_embeddings)
+        kmeans_eve = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(eve_embeddings)
+
+        alice_sub = kmeans_alice.cluster_centers_
+        eve_sub = kmeans_eve.cluster_centers_
+
+    else:
+        alice_sub = alice_embeddings
+        eve_sub = eve_embeddings
+        #eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], ALIGN_CONFIG["Batchsize"], replace=False), :]
+
+    if ALIGN_CONFIG["Selection"] in ["Degree", "GroundTruth"]:
+        alice_sub = np.stack(alice_sub, axis=0)
+        eve_sub = np.stack(eve_sub, axis=0)
+
+    if GLOBAL_CONFIG["BenchMode"]:
+        elapsed_align_prep = time.time() - start_align_prep
+        start_align = time.time()
+
+    if GLOBAL_CONFIG["Verbose"]:
+        print("Aligning vectors. This may take a while.")
+
+    if ALIGN_CONFIG["Wasserstein"]:
+        aligner = WassersteinAligner(ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
+                                      ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"],ALIGN_CONFIG["NIterInit"],
+                                      ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], ALIGN_CONFIG["VocabSize"],
+                                      ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
+                                      ALIGN_CONFIG["Verbose"])
+    else:
+        aligner = ProcrustesAligner()
+
+    transformation_matrix = aligner.align(alice_sub, eve_sub)
+
+    # with open("./dev/list.pck", "rb") as f:
+    #     selected = pickle.load(f)
+    #
+    # alice_sub = alice_embeddings
+    # eve_sub = eve_embeddings[selected, :]
+    #
+    # min_criterion = math.inf
+    # best_eve_sub = None
+    #
+    # for i in range(20):
+    #     eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], ALIGN_CONFIG["Batchsize"], replace=False), :]
+    #     _, tmp = aligner.convex_init(alice_sub, eve_sub)
+    #     if tmp < min_criterion:
+    #         print("Found new best matching subset: " + str(tmp))
+    #         min_criterion = tmp
+    #         best_eve_sub = eve_sub
+
+    alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).reshape([-1, 1])
+
+    eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
+    eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
+
+    if GLOBAL_CONFIG["BenchMode"]:
+        elapsed_align = time.time() - start_align
+    # alice_embeddings = normalized(alice_embeddings)
+    # eve_embeddings = normalized(eve_embeddings)
+    # eve_embeddings = np.matmul(eve_embeddings, transformation_matrix)
+
+    if GLOBAL_CONFIG["Verbose"]:
+        print("Done.")
+        print("Performing bipartite graph matching")
+
+    if GLOBAL_CONFIG["BenchMode"]:
+        start_mapping = time.time()
+
+    matcher = MinWeightMatcher("cosine")
+    mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
+
+    if GLOBAL_CONFIG["BenchMode"]:
+        elapsed_mapping = time.time() - start_mapping
+
+    # Evaluation
+    correct = 0
+    for eve, alice in mapping.items():
+        if eve[0] == "A":
+            continue
+        if eve[1:] == alice[1:]:
+            correct += 1
+
+    success_rate = correct/n_alice
+    print("Correct: " + str(correct))
+    print(success_rate)
+
+    if GLOBAL_CONFIG["BenchMode"]:
+        elapsed_total = time.time() - start_total
+        keys = ["timestamp"]
+        vals = [time.time()]
+        for key, val in EMB_CONFIG.items():
+            keys.append(key)
+            vals.append(val)
+
+        keys += ["success_rate","correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
+                 "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping"]
+
+        vals += [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
+                 elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping]
+
+        if not os.path.isfile("./data/benchmark.tsv"):
+            save_tsv([keys], "./data/benchmark.tsv")
+
+        save_tsv([vals], "./data/benchmark.tsv", mode="a")
+
+    return mapping
+
+
+if __name__ == "__main__":
+    # Some global parameters
+
+    GLOBAL_CONFIG = {
+        "Data": "./data/feb14.tsv",
+        "Overlap": 0.8,
+        "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
+        "BenchMode": False,  # Benchmark Mode
+        "Verbose": True  # Print Status Messages?
+    }
+
+    # Configuration for Bloom filters
+    ENC_CONFIG = {
+        "AliceSecret": "SuperSecretSalt1337",
+        "AliceBFLength": 1024,
+        "AliceBits": 30,
+        "AliceN": 2,
+        "AliceMetric": "dice",
+        "EveSecret": "ATotallyDifferentString",
+        "EveBFLength": 1024,
+        "EveBits": 30,
+        "EveN": 2,
+        "EveMetric": "dice",
+        "Data": GLOBAL_CONFIG["Data"],
+        "Overlap": GLOBAL_CONFIG["Overlap"]
+    }
+
+    EMB_CONFIG = {
+        "AliceWalkLen": 100,
+        "AliceNWalks": 20,
+        "AliceP": 0.2,  # 0.5
+        "AliceQ": 5.0,  # 2
+        "AliceDim": 64,
+        "AliceContext": 10,
+        "AliceEpochs": 30,
+        "AliceQuantile": 0.8,  # 0.99
+        "AliceDiscretize": False,
+        "AliceSeed": 42,
+        "EveWalkLen": 100,
+        "EveNWalks": 20,
+        "EveP": 0.2,  # 0.5
+        "EveQ": 5.0,  # 2
+        "EveDim": 64,
+        "EveContext": 10,
+        "EveEpochs": 30,
+        "EveQuantile": 0.8,  # 0.99
+        "EveDiscretize": False,
+        "EveSeed": 42,
+        "Workers": -1,
+        "Data": GLOBAL_CONFIG["Data"],
+        "Overlap": GLOBAL_CONFIG["Overlap"]
+    }
+
+    ALIGN_CONFIG = {
+        "Maxload": 200000,
+        "RegWS": 1.2,
+        "RegInit": 0.2,
+        "Batchsize": 1500,
+        "LR": 500.0,
+        "NIterWS": 500,
+        "NIterInit": 200,  # 800
+        "NEpochWS": 150,
+        "VocabSize": 1500,
+        "LRDecay": 0.95,
+        "Sqrt": True,
+        "EarlyStopping": 5,
+        "Selection": "Degree",
+        "Wasserstein": True,
+        "Verbose": GLOBAL_CONFIG["Verbose"]
+    }
+
+    mapping = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
