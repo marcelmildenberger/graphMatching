@@ -15,6 +15,7 @@ from aligners.closed_form_procrustes import ProcrustesAligner
 from aligners.wasserstein_procrustes import WassersteinAligner
 from embedders.node2vec import N2VEmbedder
 from encoders.bf_encoder import BFEncoder
+from encoders.non_encoder import NonEncoder
 from matchers.bipartite import MinWeightMatcher
 from utils import *
 
@@ -117,13 +118,16 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["BenchMode"]:
             start_eve_enc = time.time()
 
-        eve_bloom_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
-                                      ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
+        if ENC_CONFIG["EveEnc"]:
+            eve_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
+                                          ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
+        else:
+            eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Eve's Data")
 
-        eve_enc = eve_bloom_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
+        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = time.time() - start_eve_enc
@@ -269,6 +273,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         edgelist_eve = nx.from_pandas_edgelist(pd.DataFrame(eve_enc, columns=["source","target","weight"]), edge_attr=True)
         degrees_alice = sorted(edgelist_alice.degree, key=lambda x: x[1], reverse=True)
         degrees_eve = sorted(edgelist_eve.degree, key=lambda x: x[1], reverse=True)
+
+        if GLOBAL_CONFIG["DevMode"]:
+            save_tsv(degrees_eve, "./dev/degrees_eve.tsv")
+            save_tsv(degrees_alice, "./dev/degrees_alice.tsv")
         # TODO: Find better Heuristic
         #ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids)) - 1
         #ALIGN_CONFIG["VocabSize"] = min(len(alice_uids), len(eve_uids)) - 1
@@ -415,7 +423,7 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/feb14.tsv",
+        "Data": "./data/feb14_2.tsv",
         "Overlap": 0.8,
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
@@ -434,6 +442,7 @@ if __name__ == "__main__":
         "EveBits": 30,
         "EveN": 2,
         "EveMetric": "dice",
+        "EveEnc": True,
         "Data": GLOBAL_CONFIG["Data"],
         "Overlap": GLOBAL_CONFIG["Overlap"]
     }
@@ -441,21 +450,21 @@ if __name__ == "__main__":
     EMB_CONFIG = {
         "AliceWalkLen": 100,
         "AliceNWalks": 20,
-        "AliceP": 0.2,  # 0.5
-        "AliceQ": 5.0,  # 2
+        "AliceP": 0.5,  # 0.5
+        "AliceQ": 5,  # 2
         "AliceDim": 64,
         "AliceContext": 10,
-        "AliceEpochs": 30,
+        "AliceEpochs": 40,
         "AliceQuantile": 0.8,  # 0.99
         "AliceDiscretize": False,
         "AliceSeed": 42,
         "EveWalkLen": 100,
         "EveNWalks": 20,
-        "EveP": 0.2,  # 0.5
-        "EveQ": 5.0,  # 2
+        "EveP": 0.5,  # 0.5
+        "EveQ": 5,  # 2
         "EveDim": 64,
         "EveContext": 10,
-        "EveEpochs": 30,
+        "EveEpochs": 40,
         "EveQuantile": 0.8,  # 0.99
         "EveDiscretize": False,
         "EveSeed": 42,
@@ -466,17 +475,17 @@ if __name__ == "__main__":
 
     ALIGN_CONFIG = {
         "Maxload": 200000,
-        "RegWS": 1.2,
+        "RegWS": 0.9,
         "RegInit": 0.2,
-        "Batchsize": 1500,
-        "LR": 500.0,
+        "Batchsize": 750,
+        "LR": 70.0,
         "NIterWS": 500,
         "NIterInit": 200,  # 800
         "NEpochWS": 150,
-        "VocabSize": 1500,
-        "LRDecay": 0.95,
+        "VocabSize": 750,
+        "LRDecay": 0.99,
         "Sqrt": True,
-        "EarlyStopping": 5,
+        "EarlyStopping": 10,
         "Selection": "Degree",
         "Wasserstein": True,
         "Verbose": GLOBAL_CONFIG["Verbose"]
