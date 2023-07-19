@@ -56,7 +56,7 @@ class NetMFEmbedder():
         return embed
 
     def train(self, data_dir: str):
-        graph = nx.read_weighted_edgelist("./data/edgelists/alice.edg")
+        graph = nx.read_weighted_edgelist(data_dir)
         adj = nx.adjacency_matrix(graph).todense().astype(float)
         self.emb_matrix = self.__netmf(adj)
         self.indexdict = dict(zip(list(graph.nodes()), range(graph.number_of_nodes())))
