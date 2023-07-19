@@ -23,9 +23,9 @@ class NonEncoder(Encoder):
         for i in range(len(data)):
             for j in range(i, len(data)):
                 if sim:
-                    metric = self.comparator.similarity(" ".join(data[i]), " ".join(data[j]))
+                    metric = self.comparator.similarity("".join(data[i]), "".join(data[j]))
                 else:
-                    metric = self.comparator.distance(" ".join(data[i]), " ".join(data[j]))
+                    metric = self.comparator.distance("".join(data[i]), "".join(data[j]))
                 pw_metrics.append((uids[i], uids[j], metric))
 
         return pw_metrics
