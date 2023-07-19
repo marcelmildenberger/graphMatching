@@ -41,7 +41,7 @@ class GaleShapleyMatcher():
         self.metric = metric
         self.workers = workers
 
-    def __gale_shapley(*, A, B, A_pref, B_rank):
+    def __gale_shapley(self, A, B, A_pref, B_rank):
         """Create a stable matching using the
         Gale-Shapley algorithm.
 
@@ -88,3 +88,34 @@ class GaleShapleyMatcher():
                 tmp["A_" + str(alice_uids[alice_ind])] = pw_dists[alice_ind][eve_ind]
             eve_rank["E_" + str(eve_uids[eve_ind])] = tmp
         return self.__gale_shapley(A=set(alice_nodes), B=set(eve_nodes), A_pref=alice_pref, B_rank=eve_rank)
+
+
+class SymmetricMatcher():
+    def __init__(self, metric: str = "cosine", workers: int = -1):
+        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
+                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
+                             "matching", "l1", "l2", "manhattan",
+                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
+                             "sqeuclidean", "yule"]
+        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        self.metric = metric
+        self.workers = workers
+
+    def match(self, alice_data, alice_uids, eve_data, eve_uids):
+        pw_dists = pairwise_distances(alice_data, eve_data, metric=self.metric, n_jobs=self.workers)
+        alice_pref = {}
+        for alice_ind in range(len(pw_dists)):
+            tmp = ["E_" + str(x) for _, x in sorted(zip(list(pw_dists[alice_ind]), eve_uids))]
+            alice_pref["A_" + str(alice_uids[alice_ind])] = tmp[0]
+
+        pw_dists = np.transpose(pw_dists)
+        eve_pref = {}
+        for eve_ind in range(len(pw_dists)):
+            tmp = ["A_" + str(x) for _, x in sorted(zip(list(pw_dists[eve_ind]), alice_uids))]
+            eve_pref["E_" + str(eve_uids[eve_ind])] = tmp[0]
+
+        matching = {}
+        for a, e in alice_pref.items():
+            if eve_pref[e] == a:
+                matching[e] = a
+        return matching

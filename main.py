@@ -14,12 +14,17 @@ from tqdm import trange
 from aligners.closed_form_procrustes import ProcrustesAligner
 from aligners.wasserstein_procrustes import WassersteinAligner
 from embedders.node2vec import N2VEmbedder
+from embedders.netmf import  NetMFEmbedder
 from encoders.bf_encoder import BFEncoder
 from encoders.non_encoder import NonEncoder
-from matchers.bipartite import MinWeightMatcher
+from matchers.bipartite import MinWeightMatcher, GaleShapleyMatcher, SymmetricMatcher
+
 from utils import *
 
 def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
+
+    supported_matchings = ["MinWeight","Stable", "Symmetric"]
+    assert GLOBAL_CONFIG["Matching"] in supported_matchings, "Error: Matching method must be one of %s" % ((supported_matchings))
 
     supported_selections = ["Degree", "GroundTruth", "Centroids", "None"]
     assert ALIGN_CONFIG["Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % ((supported_selections))
@@ -183,10 +188,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Alice's data. This may take a while...")
 
-        alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
-                                     p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
-                                     context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
-                                     seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
+        if EMB_CONFIG["Algo"] == "Node2Vec":
+            alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
+                                         p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
+                                         context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
+                                         seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
+        else:
+            alice_embedder = NetMFEmbedder(EMB_CONFIG["AliceDim"], EMB_CONFIG["AliceContext"], EMB_CONFIG["AliceNegative"],
+                                           EMB_CONFIG["AliceNormalize"])
 
         alice_embedder.train("./data/edgelists/alice.edg")
 
@@ -240,10 +249,16 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Eve's data. This may take a while...")
-        eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
-                                   p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
-                                   context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
-                                   seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
+
+        if EMB_CONFIG["Algo"] == "Node2Vec":
+            eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
+                                       p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
+                                       context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
+                                       seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
+        else:
+            eve_embedder = NetMFEmbedder(EMB_CONFIG["EveDim"], EMB_CONFIG["EveContext"],
+                                           EMB_CONFIG["EveNegative"],
+                                           EMB_CONFIG["EveNormalize"])
 
         eve_embedder.train("./data/edgelists/eve.edg")
 
@@ -283,7 +298,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
         eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
-
 
     elif ALIGN_CONFIG["Selection"] == "GroundTruth":
         alice_sub = [alice_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
@@ -361,9 +375,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     #         min_criterion = tmp
     #         best_eve_sub = eve_sub
 
-    alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).reshape([-1, 1])
+    #alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).reshape([-1, 1])
 
-    eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
+    #eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
     eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
 
     if GLOBAL_CONFIG["BenchMode"]:
@@ -379,7 +393,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["BenchMode"]:
         start_mapping = time.time()
 
-    matcher = MinWeightMatcher("cosine")
+    if GLOBAL_CONFIG["Matching"] == "MinWeight":
+        matcher = MinWeightMatcher(GLOBAL_CONFIG["MatchingMetric"])
+    elif GLOBAL_CONFIG["Matching"] == "Stable":
+        matcher = GaleShapleyMatcher(GLOBAL_CONFIG["MatchingMetric"])
+    elif GLOBAL_CONFIG["Matching"] == "Symmetric":
+        matcher = SymmetricMatcher(GLOBAL_CONFIG["MatchingMetric"])
+
     mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
 
     if GLOBAL_CONFIG["BenchMode"]:
@@ -423,11 +443,13 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/feb14_2.tsv",
+        "Data": "./data/good_1k.tsv",
         "Overlap": 0.8,
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
-        "Verbose": True  # Print Status Messages?
+        "Verbose": True,  # Print Status Messages?
+        "MatchingMetric": "euclidean",
+        "Matching": "Stable"
     }
 
     # Configuration for Bloom filters
@@ -448,47 +470,39 @@ if __name__ == "__main__":
     }
 
     EMB_CONFIG = {
-        "AliceWalkLen": 100,
-        "AliceNWalks": 20,
-        "AliceP": 0.5,  # 0.5
-        "AliceQ": 5,  # 2
-        "AliceDim": 64,
-        "AliceContext": 10,
-        "AliceEpochs": 40,
-        "AliceQuantile": 0.8,  # 0.99
+        "Algo": "NetMF",
+        "AliceQuantile": 0.8,
         "AliceDiscretize": False,
-        "AliceSeed": 42,
-        "EveWalkLen": 100,
-        "EveNWalks": 20,
-        "EveP": 0.5,  # 0.5
-        "EveQ": 5,  # 2
-        "EveDim": 64,
-        "EveContext": 10,
-        "EveEpochs": 40,
-        "EveQuantile": 0.8,  # 0.99
+        "AliceDim": 128,
+        "AliceContext": 10,
+        "AliceNegative": 1,
+        "AliceNormalize": True,
+        "EveQuantile": 0.8,
         "EveDiscretize": False,
-        "EveSeed": 42,
+        "EveDim": 128,
+        "EveContext": 10,
+        "EveNegative": 1,
+        "EveNormalize": True,
         "Workers": -1,
-        "Data": GLOBAL_CONFIG["Data"],
-        "Overlap": GLOBAL_CONFIG["Overlap"]
+        "Enc": ENC_CONFIG,
     }
 
     ALIGN_CONFIG = {
         "Maxload": 200000,
-        "RegWS": 0.9,
-        "RegInit": 0.2,
+        "RegWS": 0.05,
+        "RegInit": 1,
         "Batchsize": 750,
-        "LR": 70.0,
-        "NIterWS": 500,
-        "NIterInit": 200,  # 800
-        "NEpochWS": 150,
-        "VocabSize": 750,
-        "LRDecay": 0.99,
-        "Sqrt": True,
-        "EarlyStopping": 10,
+        "LR": 1.0,
+        "NIterWS": 50,
+        "NIterInit": 10,  # 800
+        "NEpochWS": 500,
+        "VocabSize": 800,
+        "LRDecay": 0.995,
+        "Sqrt": False,
+        "EarlyStopping": 20,
         "Selection": "Degree",
         "Wasserstein": True,
         "Verbose": GLOBAL_CONFIG["Verbose"]
     }
 
-    mapping = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
+    mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
