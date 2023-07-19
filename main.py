@@ -26,7 +26,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     supported_matchings = ["MinWeight","Stable", "Symmetric"]
     assert GLOBAL_CONFIG["Matching"] in supported_matchings, "Error: Matching method must be one of %s" % ((supported_matchings))
 
-    supported_selections = ["Degree", "GroundTruth", "Centroids", "None"]
+    supported_selections = ["Degree", "GroundTruth", "Centroids", "Random", "None", None]
     assert ALIGN_CONFIG["Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % ((supported_selections))
 
     if GLOBAL_CONFIG["BenchMode"]:
@@ -215,6 +215,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     alice_embeddings, alice_uids = alice_embedder.get_vectors()
 
+    if ALIGN_CONFIG["Batchsize"] == "Auto":
+        ALIGN_CONFIG["Batchsize"] = len(alice_uids) - 50
 
     if os.path.isfile("./data/embeddings/eve-%s.pck" % emb_config_hash):
         if GLOBAL_CONFIG["Verbose"]:
@@ -292,10 +294,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["DevMode"]:
             save_tsv(degrees_eve, "./dev/degrees_eve.tsv")
             save_tsv(degrees_alice, "./dev/degrees_alice.tsv")
-        # TODO: Find better Heuristic
+
+
         #ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids)) - 1
         #ALIGN_CONFIG["VocabSize"] = min(len(alice_uids), len(eve_uids)) - 1
 
+        #selected_alice = [k[0] for k in degrees_alice[:int(ALIGN_CONFIG["Batchsize"]/2)]]
+        #selected_eve = [k[0] for k in degrees_eve[:int(ALIGN_CONFIG["Batchsize"]/2)]]
         alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
         eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
 
@@ -331,6 +336,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_sub = kmeans_alice.cluster_centers_
         eve_sub = kmeans_eve.cluster_centers_
 
+    elif ALIGN_CONFIG["Selection"] == "Random":
+        alice_sub = alice_embeddings
+        eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], alice_embeddings.shape[0], replace=False), :]
+
     else:
         alice_sub = alice_embeddings
         eve_sub = eve_embeddings
@@ -348,9 +357,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         print("Aligning vectors. This may take a while.")
 
     if ALIGN_CONFIG["Wasserstein"]:
+        if ALIGN_CONFIG["RegWS"] == "Auto":
+            ALIGN_CONFIG["RegWS"] = min(0.2, len(alice_uids)*0.0001)
+
         aligner = WassersteinAligner(ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
                                       ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"],ALIGN_CONFIG["NIterInit"],
-                                      ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], ALIGN_CONFIG["VocabSize"],
+                                      ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], len(alice_uids),
                                       ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
                                       ALIGN_CONFIG["Verbose"])
     else:
@@ -443,8 +455,8 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/good_1k.tsv",
-        "Overlap": 0.8,
+        "Data": "./data/fakename_2k.tsv",
+        "Overlap": 1,
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
@@ -452,32 +464,31 @@ if __name__ == "__main__":
         "Matching": "Stable"
     }
 
-    # Configuration for Bloom filters
     ENC_CONFIG = {
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
         "AliceBits": 30,
         "AliceN": 2,
         "AliceMetric": "dice",
+        "EveEnc": True,
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
         "EveBits": 30,
         "EveN": 2,
         "EveMetric": "dice",
-        "EveEnc": True,
         "Data": GLOBAL_CONFIG["Data"],
         "Overlap": GLOBAL_CONFIG["Overlap"]
     }
 
     EMB_CONFIG = {
         "Algo": "NetMF",
-        "AliceQuantile": 0.8,
+        "AliceQuantile": 0.9,
         "AliceDiscretize": False,
         "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
-        "EveQuantile": 0.8,
+        "EveQuantile": 0.9,
         "EveDiscretize": False,
         "EveDim": 128,
         "EveContext": 10,
@@ -488,21 +499,20 @@ if __name__ == "__main__":
     }
 
     ALIGN_CONFIG = {
-        "Maxload": 200000,
-        "RegWS": 0.05,
-        "RegInit": 1,
-        "Batchsize": 750,
-        "LR": 1.0,
-        "NIterWS": 50,
+        "RegWS": "Auto",
+        "RegInit": 0.2,
+        "Batchsize": 1950,
+        "LR": 500.0,
+        "NIterWS": 2,
         "NIterInit": 10,  # 800
-        "NEpochWS": 500,
-        "VocabSize": 800,
+        "NEpochWS": 200,
         "LRDecay": 0.995,
         "Sqrt": False,
-        "EarlyStopping": 20,
-        "Selection": "Degree",
+        "EarlyStopping": 100,
+        "Selection": "None",
         "Wasserstein": True,
         "Verbose": GLOBAL_CONFIG["Verbose"]
     }
 
+    #ae, ee, au, eu = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
     mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
