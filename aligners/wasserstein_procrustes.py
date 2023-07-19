@@ -11,7 +11,7 @@ def sqrt_eig(x):
 class WassersteinAligner:
 
     def __init__(self, maxload, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, vocab_size, lr_decay,
-                 apply_sqrt, early_stopping, seed=42, verbose=True, min_epsilon=0.0005):
+                 apply_sqrt, early_stopping, seed=42, verbose=True, min_epsilon=0.001):
         #np.random.seed(seed)
         self.maxload = maxload
         self.reg_init = reg_init
@@ -41,17 +41,19 @@ class WassersteinAligner:
     def solve_procrustes(self, R):
         assert self.X is not None and self.Y is not None, "Matrices must not be empty!"
         no_improvement = 0
+        first_obj = -1
         prev_obj = float("inf")
         best_obj = float("inf")
         best_R = R
         for epoch in range(1, self.n_epoch + 1):
             if self.early_stopping > 0 and no_improvement >= self.early_stopping:
                 print("Objective didn't improve for %i epochs. Stopping..." % self.early_stopping)
+                print("Improvement: %f" % (first_obj-best_obj))
                 return best_R
             for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", position=0, leave=True):
                 # sample mini-batch
-                xt = self.X[np.random.permutation(self.maxload)[:self.batchsize], :]
-                yt = self.Y[np.random.permutation(self.maxload)[:self.batchsize], :]
+                xt = self.X[np.random.permutation(self.X.shape[0])[:self.batchsize], :]
+                yt = self.Y[np.random.permutation(self.Y.shape[0])[:self.batchsize], :]
                 # compute OT on minibatch
                 C = -np.dot(np.dot(xt, R), yt.T)
                 P = ot.sinkhorn(np.ones(self.batchsize), np.ones(self.batchsize), C, self.reg_ws, stopThr=1e-3)
@@ -63,7 +65,11 @@ class WassersteinAligner:
                 R = np.dot(U, VT)
             self.lr *= self.lr_decay
 
-            obj = self.objective(R, n=min(1000, self.maxload))
+            #obj = self.objective(R, n=min(1000, self.maxload))
+            obj = self.objective(R, n=min(self.Y.shape[0], self.X.shape[0]))
+
+            if first_obj == -1:
+                first_obj = obj
             if obj < best_obj:
                 best_obj = obj
                 best_R = R
@@ -90,10 +96,10 @@ class WassersteinAligner:
         if self.X.shape[0] < self.Y.shape[0]:
             print("Ouch.")
             X_c = self.X
-            Y_c = self.Y[np.random.permutation(self.X.shape[0])[:self.X.shape[0]], :]
+            Y_c = self.Y[np.random.permutation(self.Y.shape[0])[:self.X.shape[0]], :]
         elif self.X.shape[0] > self.Y.shape[0]:
             print("Ouch.")
-            X_c = self.X[np.random.permutation(self.Y.shape[0])[:self.Y.shape[0]], :]
+            X_c = self.X[np.random.permutation(self.X.shape[0])[:self.Y.shape[0]], :]
             Y_c = self.Y
         else:
             X_c = self.X
