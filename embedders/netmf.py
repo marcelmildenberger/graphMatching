@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import sparse
+from sparse_dot_mkl import dot_product_mkl
 import aesara
 from aesara import tensor as T
 import networkx as nx
@@ -26,12 +27,12 @@ class NetMFEmbedder():
         n = A.shape[0]
         vol = float(A.sum())
         L, d_rt = sparse.csgraph.laplacian(A, normed=True, return_diag=True)
-        X = sparse.identity(n) - L
+        X = sparse.identity(n, format="csr") - L
         S = np.zeros_like(X)
-        X_power = sparse.identity(n)
+        X_power = sparse.identity(n, format="csr")
         for i in range(window):
             # print "Compute matrix %d-th power" % (i + 1)
-            X_power = X_power.dot(X)
+            X_power = dot_product_mkl(X_power, X)
             S += X_power
         S *= vol / window / b
         D_rt_inv = sparse.diags(d_rt ** -1)
