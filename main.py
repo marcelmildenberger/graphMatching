@@ -48,7 +48,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
                                             ENC_CONFIG["EveN"],GLOBAL_CONFIG["Data"],
                           GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
-    emb_config_hash = md5(("%s-%s-%s-%s" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+    eve_emb_hash = md5(("%s-%s-%s" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+
+    alice_emb_hash = md5(("%s-%s-%s-%s" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
                                             GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
     if os.path.isfile("./data/encoded/alice-%s.pck" % alice_enc_hash):
@@ -57,6 +59,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "rb") as f:
             alice_enc, n_alice = pickle.load(f)
+            #alice_enc, n_alice = joblib.load(f)
+
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_enc = -1
@@ -95,6 +99,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "wb") as f:
             pickle.dump((alice_enc, n_alice), f, protocol=5)
+            #joblib.dump((alice_enc, n_alice), f, protocol=5, compress=3)
+
 
     if GLOBAL_CONFIG["Verbose"]:
             print("Computing Thresholds and subsetting data for Alice")
@@ -117,6 +123,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "rb") as f:
             eve_enc, n_eve = pickle.load(f)
+            #eve_enc, n_eve = joblib.load(f)
+
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = -1
@@ -153,11 +161,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         if GLOBAL_CONFIG["DevMode"]:
             save_tsv(eve_enc, "dev/eve.edg")
 
-        with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "wb") as f:
-            pickle.dump((eve_enc, n_eve), f, protocol=5)
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
+
+        with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "wb") as f:
+            pickle.dump((eve_enc, n_eve), f, protocol=5)
+            #joblib.dump((eve_enc, n_eve), f, protocol=5, compress=3)
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
@@ -171,12 +180,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Eve's data.")
 
-    if os.path.isfile("./data/embeddings/alice-%s.pck" % emb_config_hash):
+    if os.path.isfile("./data/embeddings/alice-%s.pck" % alice_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's embeddings")
 
-        with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "rb") as f:
+        with open("./data/embeddings/alice-%s.pck" % alice_emb_hash, "rb") as f:
             alice_embedder = pickle.load(f)
+            #alice_embedder = joblib.load(f)
+
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_emb = -1
@@ -221,22 +232,24 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         if GLOBAL_CONFIG["Verbose"]:
             print("Done embedding Alice's data.")
 
-        # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
-        # similarity.
-        with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "wb") as f:
+        with open("./data/embeddings/alice-%s.pck" % alice_emb_hash, "wb") as f:
             pickle.dump(alice_embedder, f, protocol=5)
+            #joblib.dump(alice_embedder, f, protocol=5, compress=3)
 
+    # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
+    # similarity.
     alice_embeddings, alice_uids = alice_embedder.get_vectors()
 
     if ALIGN_CONFIG["Batchsize"] == "Auto":
         ALIGN_CONFIG["Batchsize"] = len(alice_uids) - 50
 
-    if os.path.isfile("./data/embeddings/eve-%s.pck" % emb_config_hash):
+    if os.path.isfile("./data/embeddings/eve-%s.pck" % eve_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's embeddings")
 
-        with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "rb") as f:
+        with open("./data/embeddings/eve-%s.pck" % eve_emb_hash, "rb") as f:
             eve_embedder = pickle.load(f)
+            #eve_embedder = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_emb = -1
@@ -272,8 +285,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         if GLOBAL_CONFIG["Verbose"]:
             print("Done embedding Eve's data.")
 
-        with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "wb") as f:
+        with open("./data/embeddings/eve-%s.pck" % eve_emb_hash, "wb") as f:
             pickle.dump(eve_embedder, f, protocol=5)
+            #joblib.dump(eve_embedder, f, protocol=5, compress=3)
 
     eve_embeddings, eve_uids = eve_embedder.get_vectors()
 
@@ -357,7 +371,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
                                       ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"],ALIGN_CONFIG["NIterInit"],
                                       ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], len(alice_uids),
                                       ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
-                                      ALIGN_CONFIG["Verbose"])
+                                      verbose=GLOBAL_CONFIG["Verbose"])
     else:
         aligner = ProcrustesAligner()
 
@@ -395,8 +409,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
             correct += 1
 
     success_rate = correct/n_alice
-    print("Correct: " + str(correct))
-    print(success_rate)
+    print("Correct: %i of %i" % (correct, n_alice))
+    print("Success rate: %f" % success_rate)
 
     if GLOBAL_CONFIG["BenchMode"]:
         elapsed_total = time.time() - start_total
@@ -424,8 +438,8 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_20k.tsv",
-        "Overlap": 0.3,
+        "Data": "./data/fakename_2k.tsv",
+        "Overlap": 0.8,
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
@@ -477,7 +491,6 @@ if __name__ == "__main__":
         "EarlyStopping": 50,
         "Selection": "None",
         "Wasserstein": True,
-        "Verbose": GLOBAL_CONFIG["Verbose"]
     }
 
     #ae, ee, au, eu = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
