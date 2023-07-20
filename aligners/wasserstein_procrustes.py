@@ -84,7 +84,7 @@ class WassersteinAligner:
                     no_improvement = 0
                 prev_obj = obj
 
-        return R
+        return best_R
 
     def convex_init(self, X = None, Y = None):
         if X is not None or Y is not None:
