@@ -61,7 +61,7 @@ class N2VEmbedder():
 
         if self.dev:
             with open("./dev/walks_"+datname+".pck", "wb") as f:
-                pickle.dump(walks, f)
+                pickle.dump(walks, f, protocol=5)
 
 
         # Run Word2Vec on the random walk to generate node2vec embeddings

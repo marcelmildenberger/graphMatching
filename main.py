@@ -1,4 +1,5 @@
 import os
+import platform
 import pickle
 import random
 import time
@@ -14,14 +15,21 @@ from tqdm import trange
 from aligners.closed_form_procrustes import ProcrustesAligner
 from aligners.wasserstein_procrustes import WassersteinAligner
 from embedders.node2vec import N2VEmbedder
-from embedders.netmf import  NetMFEmbedder
+from embedders.netmf import NetMFEmbedder
 from encoders.bf_encoder import BFEncoder
 from encoders.non_encoder import NonEncoder
 from matchers.bipartite import MinWeightMatcher, GaleShapleyMatcher, SymmetricMatcher
 
 from utils import *
 
-def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
+def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
+
+    if "intel" not in platform.processor().lower():
+        print("This code uses Intel MKL to speed up computations, but a non-Intel CPU was detected on your system. "
+              "We will now bypass the library's CPU check. If you encouter problems, set the BYPASS_CPU flag in main.py "
+              "to False.")
+
+        if BYPASS_CPU: os.environ["MKL_DEBUG_CPU_TYPE"] = "5"
 
     supported_matchings = ["MinWeight","Stable", "Symmetric"]
     assert GLOBAL_CONFIG["Matching"] in supported_matchings, "Error: Matching method must be one of %s" % ((supported_matchings))
@@ -34,15 +42,20 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     # Compute hashes of configuration to store/load data and thus avoid redundant computations.
     # Using MD5 because Python's native hash() is not stable across processes
-    enc_config_hash = md5(str(ENC_CONFIG).encode()).hexdigest()
-    emb_config_hash = md5(str(EMB_CONFIG).encode()).hexdigest()
-    align_config_hash = md5(str(ALIGN_CONFIG).encode()).hexdigest()
+    eve_enc_hash = md5(("%s-%s-%s-%s-%s" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],ENC_CONFIG["EveBits"],
+                                            ENC_CONFIG["EveN"],GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+    alice_enc_hash = md5(("%s-%s-%s-%s-%s-%s" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],ENC_CONFIG["EveBits"],
+                                            ENC_CONFIG["EveN"],GLOBAL_CONFIG["Data"],
+                          GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
-    if os.path.isfile("./data/encoded/alice-%s.pck" % enc_config_hash):
+    emb_config_hash = md5(("%s-%s-%s-%s" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+                                            GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+
+    if os.path.isfile("./data/encoded/alice-%s.pck" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's encoded records")
 
-        with open("./data/encoded/alice-%s.pck" % enc_config_hash, "rb") as f:
+        with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "rb") as f:
             alice_enc, n_alice = pickle.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -80,8 +93,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Alice's data")
 
-        with open("./data/encoded/alice-%s.pck" % enc_config_hash, "wb") as f:
-            pickle.dump((alice_enc, n_alice), f)
+        with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "wb") as f:
+            pickle.dump((alice_enc, n_alice), f, protocol=5)
 
     if GLOBAL_CONFIG["Verbose"]:
             print("Computing Thresholds and subsetting data for Alice")
@@ -98,11 +111,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Alice's data.")
 
-    if os.path.isfile("./data/encoded/eve-%s.pck" % enc_config_hash):
+    if os.path.isfile("./data/encoded/eve-%s.pck" % eve_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's encoded records")
 
-        with open("./data/encoded/eve-%s.pck" % enc_config_hash, "rb") as f:
+        with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "rb") as f:
             eve_enc, n_eve = pickle.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -140,8 +153,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["DevMode"]:
             save_tsv(eve_enc, "dev/eve.edg")
 
-        with open("./data/encoded/eve-%s.pck" % enc_config_hash, "wb") as f:
-            pickle.dump((eve_enc, n_eve), f)
+        with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "wb") as f:
+            pickle.dump((eve_enc, n_eve), f, protocol=5)
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
@@ -211,7 +224,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
         # similarity.
         with open("./data/embeddings/alice-%s.pck" % emb_config_hash, "wb") as f:
-            pickle.dump(alice_embedder, f)
+            pickle.dump(alice_embedder, f, protocol=5)
 
     alice_embeddings, alice_uids = alice_embedder.get_vectors()
 
@@ -232,20 +245,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         if GLOBAL_CONFIG["BenchMode"]:
             start_eve_emb = time.time()
-
-        # if GLOBAL_CONFIG["Verbose"]:
-        #     print("Computing Thresholds and subsetting data for Eve")
-        #
-        # if GLOBAL_CONFIG["BenchMode"]:
-        #     start_eve_emb = time.time()
-        #
-        # tres = np.quantile([e[2] for e in eve_enc], EMB_CONFIG["EveQuantile"])
-        # eve_enc = [e for e in eve_enc if e[2] > tres]
-        # if EMB_CONFIG["EveDiscretize"]:
-        #     eve_enc = [(e[0], e[1], 1) for e in eve_enc]
-        #
-        # if GLOBAL_CONFIG["Verbose"]:
-        #     print("Done processing Eve's data.")
 
         save_tsv(eve_enc, "data/edgelists/eve.edg")
 
@@ -274,7 +273,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             print("Done embedding Eve's data.")
 
         with open("./data/embeddings/eve-%s.pck" % emb_config_hash, "wb") as f:
-            pickle.dump(eve_embedder, f)
+            pickle.dump(eve_embedder, f, protocol=5)
 
     eve_embeddings, eve_uids = eve_embedder.get_vectors()
 
@@ -296,11 +295,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             save_tsv(degrees_alice, "./dev/degrees_alice.tsv")
 
 
-        #ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids)) - 1
-        #ALIGN_CONFIG["VocabSize"] = min(len(alice_uids), len(eve_uids)) - 1
-
-        #selected_alice = [k[0] for k in degrees_alice[:int(ALIGN_CONFIG["Batchsize"]/2)]]
-        #selected_eve = [k[0] for k in degrees_eve[:int(ALIGN_CONFIG["Batchsize"]/2)]]
         alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
         eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
 
@@ -343,7 +337,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     else:
         alice_sub = alice_embeddings
         eve_sub = eve_embeddings
-        #eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], ALIGN_CONFIG["Batchsize"], replace=False), :]
 
     if ALIGN_CONFIG["Selection"] in ["Degree", "GroundTruth"]:
         alice_sub = np.stack(alice_sub, axis=0)
@@ -369,34 +362,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         aligner = ProcrustesAligner()
 
     transformation_matrix = aligner.align(alice_sub, eve_sub)
-
-    # with open("./dev/list.pck", "rb") as f:
-    #     selected = pickle.load(f)
-    #
-    # alice_sub = alice_embeddings
-    # eve_sub = eve_embeddings[selected, :]
-    #
-    # min_criterion = math.inf
-    # best_eve_sub = None
-    #
-    # for i in range(20):
-    #     eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], ALIGN_CONFIG["Batchsize"], replace=False), :]
-    #     _, tmp = aligner.convex_init(alice_sub, eve_sub)
-    #     if tmp < min_criterion:
-    #         print("Found new best matching subset: " + str(tmp))
-    #         min_criterion = tmp
-    #         best_eve_sub = eve_sub
-
-    #alice_embeddings = alice_embeddings / np.linalg.norm(alice_embeddings, 2, 1).reshape([-1, 1])
-
-    #eve_embeddings = eve_embeddings / np.linalg.norm(eve_embeddings, 2, 1).reshape([-1, 1])
     eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
 
     if GLOBAL_CONFIG["BenchMode"]:
         elapsed_align = time.time() - start_align
-    # alice_embeddings = normalized(alice_embeddings)
-    # eve_embeddings = normalized(eve_embeddings)
-    # eve_embeddings = np.matmul(eve_embeddings, transformation_matrix)
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Done.")
@@ -455,8 +424,8 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_2k.tsv",
-        "Overlap": 1,
+        "Data": "./data/fakename_20k.tsv",
+        "Overlap": 0.3,
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
@@ -476,8 +445,6 @@ if __name__ == "__main__":
         "EveBits": 30,
         "EveN": 2,
         "EveMetric": "dice",
-        "Data": GLOBAL_CONFIG["Data"],
-        "Overlap": GLOBAL_CONFIG["Overlap"]
     }
 
     EMB_CONFIG = {
@@ -495,24 +462,23 @@ if __name__ == "__main__":
         "EveNegative": 1,
         "EveNormalize": True,
         "Workers": -1,
-        "Enc": ENC_CONFIG,
     }
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
         "RegInit": 0.2,
-        "Batchsize": 1950,
+        "Batchsize": "Auto",
         "LR": 500.0,
         "NIterWS": 2,
         "NIterInit": 10,  # 800
         "NEpochWS": 200,
-        "LRDecay": 0.995,
+        "LRDecay": 0.95,
         "Sqrt": False,
-        "EarlyStopping": 100,
+        "EarlyStopping": 50,
         "Selection": "None",
         "Wasserstein": True,
         "Verbose": GLOBAL_CONFIG["Verbose"]
     }
 
     #ae, ee, au, eu = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
-    mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
+    mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=False)
