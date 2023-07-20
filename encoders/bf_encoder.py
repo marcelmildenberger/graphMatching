@@ -7,8 +7,30 @@ from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
-from sklearn.metrics import pairwise_distances
+from sklearn.metrics import pairwise_distances_chunked
 
+
+def reduce_func(D_chunk, start):
+    global tuids
+    res = []
+    for row in D_chunk:
+        tmp = []
+        for j, val in enumerate(row[0:start]):
+            tmp.append((tuids[start], tuids[j], val))
+        res.append(tmp)
+        start += 1
+    return res
+
+def reduce_func_sim(D_chunk, start):
+    global tuids
+    res = []
+    for row in D_chunk:
+        tmp = []
+        for j, val in enumerate(row[0:start]):
+            tmp.append((tuids[start], tuids[j], 1-val))
+        res.append(tmp)
+        start += 1
+    return res
 
 class BFEncoder(Encoder):
 
@@ -85,7 +107,7 @@ class BFEncoder(Encoder):
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
         # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
         #print("DEB: Stacking")
-        enc_data = np.stack([list(barr) for barr in enc_data])
+        enc_data = np.stack([list(barr) for barr in enc_data]).astype(bool)
         return enc_data
 
     def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
@@ -110,18 +132,16 @@ class BFEncoder(Encoder):
         enc = self.encode(data)
         # Calculates pairwise distances between the provided data points
         #print("DEB: PDist")
-        pw_metrics = pairwise_distances(enc, metric="cosine", n_jobs=-1)
-        # Convert to similarities if specified
-        #print("DEB: Covert sims")
-
+        global tuids
+        tuids = uids
         if sim:
-            pw_metrics = 1 - pw_metrics
-
-        #print("DEB: To Long")
-        # Convert to "long" format
+            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func_sim)
+        else:
+            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func)
         pw_metrics_long = []
-        for i in range(len(pw_metrics)):
-            for j in range(i + 1, len(pw_metrics[0])):
-                pw_metrics_long.append((uids[i], uids[j], pw_metrics[i][j]))
+        for i in pw_metrics:
+            pw_metrics_long += i
+        pw_metrics_long = [item for row in pw_metrics_long for item in row]
+
 
         return pw_metrics_long
