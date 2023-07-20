@@ -47,10 +47,11 @@ class WassersteinAligner:
         best_R = R
         for epoch in range(1, self.n_epoch + 1):
             if self.early_stopping > 0 and no_improvement >= self.early_stopping:
-                print("Objective didn't improve for %i epochs. Stopping..." % self.early_stopping)
-                print("Improvement: %f" % (first_obj-best_obj))
+                if self.verbose:
+                    print("Objective didn't improve for %i epochs. Stopping..." % self.early_stopping)
+                    print("Improvement: %f" % (first_obj-best_obj))
                 return best_R
-            for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", position=0, leave=True):
+            for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", disable= not self.verbose):
                 # sample mini-batch
                 xt = self.X[np.random.permutation(self.X.shape[0])[:self.batchsize], :]
                 yt = self.Y[np.random.permutation(self.Y.shape[0])[:self.batchsize], :]
@@ -94,11 +95,9 @@ class WassersteinAligner:
         # If the two matrices contain a different number of records, reduce the size to the smaller of the two
         # by random subsampling.
         if self.X.shape[0] < self.Y.shape[0]:
-            print("Ouch.")
             X_c = self.X
             Y_c = self.Y[np.random.permutation(self.Y.shape[0])[:self.X.shape[0]], :]
         elif self.X.shape[0] > self.Y.shape[0]:
-            print("Ouch.")
             X_c = self.X[np.random.permutation(self.X.shape[0])[:self.Y.shape[0]], :]
             Y_c = self.Y
         else:
@@ -113,27 +112,31 @@ class WassersteinAligner:
         K_Y *= np.linalg.norm(K_X) / np.linalg.norm(K_Y)
         K2_X, K2_Y = np.dot(K_X, K_X), np.dot(K_Y, K_Y)
         P = np.ones([n, n]) / float(n)
-        for it in trange(1, self.n_iter_init + 1):
+        for it in trange(1, self.n_iter_init + 1, disable=not self.verbose):
             G = np.dot(P, K2_X) + np.dot(K2_Y, P) - 2 * np.dot(K_Y, np.dot(P, K_X))
             q = ot.sinkhorn(np.ones(n), np.ones(n), G, self.reg_init, stopThr=1e-3)
             alpha = 2.0 / float(2.0 + it)
             P = alpha * q + (1.0 - alpha) * P
         obj = np.linalg.norm(np.dot(P, K_X) - np.dot(K_Y, P))
-        print(obj)
+        if self.verbose:
+            print("Objective after convex initialization: " % obj)
         return procrustes(np.dot(P, X_c), Y_c).T, obj
 
     def align(self, src, tgt):
         self.X = src
         self.Y = tgt
 
-        print("\nComputing initial mapping with convex relaxation...")
+        if self.verbose:
+            print("\nComputing initial mapping with convex relaxation...")
         t0 = time.time()
         R0, _ = self.convex_init()
-        print("Done [%03d sec]" % math.floor(time.time() - t0))
+        if self.verbose:
+            print("Done [%03d sec]" % math.floor(time.time() - t0))
+            print("\nComputing mapping with Wasserstein Procrustes...")
 
-        print("\nComputing mapping with Wasserstein Procrustes...")
         t0 = time.time()
         R = self.solve_procrustes(R0)
-        print("Done [%03d sec]" % math.floor(time.time() - t0))
+        if self.verbose:
+            print("Done [%03d sec]" % math.floor(time.time() - t0))
 
         return R
