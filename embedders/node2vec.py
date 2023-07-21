@@ -91,6 +91,13 @@ class N2VEmbedder():
         self.model.save(os.path.join(path, filename))
 
     def get_vectors(self, ordering: List[str] = None) -> np.ndarray:
+        """
+        Given an ordering (a list of node IDs), returns a numpy array storing their respective embeddings, as well as
+        the ordering itself. The ordering of the array (row indices) is equivalent to the odering of the supplied list.
+        If no ordering is specified, embeddings of all nodes are returned using the order of the keys of the index dict.
+        :param ordering: An ordered list of node ids to retrieve the embeddings for
+        :return: The embeddings and the ordering
+        """
         if ordering is None:
             ordering = [k for k in self.model.wv.key_to_index]
         embeddings = [self.model.wv.get_vector(k) for k in ordering]
@@ -98,4 +105,9 @@ class N2VEmbedder():
         return embeddings, ordering
 
     def get_vector(self, key: Union[int, str]) -> np.ndarray:
+        """
+        Returns the embedding for a given node ID.
+        :param key: The node ID.
+        :return: The embedding.
+        """
         return self.model.wv.get_vector(key)

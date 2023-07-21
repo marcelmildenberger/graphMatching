@@ -1,11 +1,25 @@
-import codecs, sys, time, math, argparse, ot
+# Based on: https://github.com/facebookresearch/fastText/blob/master/alignment/unsup_align.py
+# and https://github.com/facebookresearch/fastText/blob/master/alignment/utils.py
+
+# Copyright (c) 2018-present, Facebook, Inc.
+# All rights reserved.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+import time, math, ot
 import numpy as np
 from tqdm import trange
-from .utils import *
+
 
 def sqrt_eig(x):
     U, s, VT = np.linalg.svd(x, full_matrices=False)
     return np.dot(U, np.dot(np.diag(np.sqrt(s)), VT))
+
+
+def procrustes(X_src, Y_tgt):
+    U, s, V = np.linalg.svd(np.dot(Y_tgt.T, X_src))
+    return np.dot(U, V)
 
 
 class WassersteinAligner:
@@ -31,7 +45,6 @@ class WassersteinAligner:
         self.X = None
         self.Y = None
 
-
     def objective(self, R, n=1000):
         Xn, Yn = self.X[:n], self.Y[:n]
         C = -np.dot(np.dot(Xn, R), Yn.T)
@@ -49,9 +62,9 @@ class WassersteinAligner:
             if self.early_stopping > 0 and no_improvement >= self.early_stopping:
                 if self.verbose:
                     print("Objective didn't improve for %i epochs. Stopping..." % self.early_stopping)
-                    print("Improvement: %f" % (first_obj-best_obj))
+                    print("Improvement: %f" % (first_obj - best_obj))
                 return best_R
-            for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", disable= not self.verbose):
+            for _it in trange(1, self.n_iter_ws + 1, desc="Iteration", disable=not self.verbose):
                 # sample mini-batch
                 xt = self.X[np.random.permutation(self.X.shape[0])[:self.batchsize], :]
                 yt = self.Y[np.random.permutation(self.Y.shape[0])[:self.batchsize], :]
@@ -66,7 +79,6 @@ class WassersteinAligner:
                 R = np.dot(U, VT)
             self.lr *= self.lr_decay
 
-            #obj = self.objective(R, n=min(1000, self.maxload))
             obj = self.objective(R, n=min(self.Y.shape[0], self.X.shape[0]))
 
             if first_obj == -1:
@@ -87,7 +99,7 @@ class WassersteinAligner:
 
         return best_R
 
-    def convex_init(self, X = None, Y = None):
+    def convex_init(self, X=None, Y=None):
         if X is not None or Y is not None:
             self.X = X
             self.Y = Y

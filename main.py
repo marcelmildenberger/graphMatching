@@ -3,11 +3,12 @@ import platform
 import pickle
 import random
 import time
-from hashlib import md5
 
 import networkx as nx
 import numpy as np
 import pandas as pd
+
+from hashlib import md5
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from tqdm import trange
@@ -19,7 +20,6 @@ from embedders.netmf import NetMFEmbedder
 from encoders.bf_encoder import BFEncoder
 from encoders.non_encoder import NonEncoder
 from matchers.bipartite import MinWeightMatcher, GaleShapleyMatcher, SymmetricMatcher
-
 from utils import *
 
 def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
@@ -207,21 +207,23 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         # if EMB_CONFIG["AliceDiscretize"]:
         #     alice_enc = [(e[0], e[1], 1) for e in alice_enc]
 
-        save_tsv(alice_enc, "data/edgelists/alice.edg")
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Alice's data. This may take a while...")
 
         if EMB_CONFIG["Algo"] == "Node2Vec":
+            save_tsv(alice_enc, "data/edgelists/alice.edg")
+
             alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
                                          p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
                                          context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
                                          seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
+            alice_embedder.train("./data/edgelists/alice.edg")
+
         else:
             alice_embedder = NetMFEmbedder(EMB_CONFIG["AliceDim"], EMB_CONFIG["AliceContext"], EMB_CONFIG["AliceNegative"],
                                            EMB_CONFIG["AliceNormalize"])
 
-        alice_embedder.train("./data/edgelists/alice.edg")
+            alice_embedder.train(alice_enc)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_emb = time.time() - start_alice_emb
@@ -259,22 +261,22 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         if GLOBAL_CONFIG["BenchMode"]:
             start_eve_emb = time.time()
 
-        save_tsv(eve_enc, "data/edgelists/eve.edg")
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Eve's data. This may take a while...")
 
         if EMB_CONFIG["Algo"] == "Node2Vec":
+            save_tsv(eve_enc, "data/edgelists/eve.edg")
+
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
                                        p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
                                        context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
                                        seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
+            eve_embedder.train("./data/edgelists/eve.edg")
         else:
             eve_embedder = NetMFEmbedder(EMB_CONFIG["EveDim"], EMB_CONFIG["EveContext"],
                                            EMB_CONFIG["EveNegative"],
                                            EMB_CONFIG["EveNormalize"])
-
-        eve_embedder.train("./data/edgelists/eve.edg")
+            eve_embedder.train(eve_enc)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_emb = time.time() - start_eve_emb
@@ -501,5 +503,4 @@ if __name__ == "__main__":
         "Wasserstein": True,
     }
 
-    #ae, ee, au, eu = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
     mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=False)
