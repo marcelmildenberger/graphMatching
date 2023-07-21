@@ -419,7 +419,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         for key, val in EMB_CONFIG.items():
             keys.append(key)
             vals.append(val)
-
+        for key, val in ENC_CONFIG.items():
+            keys.append(key)
+            vals.append(val)
+        for key, val in GLOBAL_CONFIG.items():
+            keys.append(key)
+            vals.append(val)
+        for key, val in ALIGN_CONFIG.items():
+            keys.append(key)
+            vals.append(val)
         keys += ["success_rate","correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
                  "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping"]
 
@@ -438,10 +446,10 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_2k.tsv",
-        "Overlap": 0.8,
+        "Data": "./data/fakename_1k.tsv",
+        "Overlap": 1,
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
-        "BenchMode": False,  # Benchmark Mode
+        "BenchMode": True,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "euclidean",
         "Matching": "Stable"
@@ -480,11 +488,11 @@ if __name__ == "__main__":
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
-        "RegInit": 0.2,
+        "RegInit": 1,
         "Batchsize": "Auto",
         "LR": 500.0,
-        "NIterWS": 2,
-        "NIterInit": 10,  # 800
+        "NIterWS": 5,
+        "NIterInit": 50,  # 800
         "NEpochWS": 200,
         "LRDecay": 0.95,
         "Sqrt": False,
