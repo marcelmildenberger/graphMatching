@@ -46,6 +46,12 @@ class N2VEmbedder():
         self.load_stored = False
 
     def train(self, data_dir: str):
+        """
+        Computes the NetMF Embeddings for the graph specified in data.
+        :param data: The graph to encode. Either a string containing the path to an edgelist file, or an edgelist of the
+        form [(source, target, weight), (source, target, weight), ...]
+        :return: Nothing
+        """
         graph = pecanpy.pecanpy.SparseOTF(p=self.p, q=self.q, workers=self.workers, verbose=True, random_state=self.seed,
                                           extend=True)
 

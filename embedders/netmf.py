@@ -7,7 +7,7 @@ from sparse_dot_mkl import dot_product_mkl
 import aesara
 from aesara import tensor as T
 import networkx as nx
-from typing import List, Union
+from typing import List, Union, Tuple
 import pandas as pd
 
 class NetMFEmbedder():
@@ -59,7 +59,7 @@ class NetMFEmbedder():
             embed = embed / norms
         return embed
 
-    def train(self, data: str):
+    def train(self, data: Union[str, List[Tuple[Union[int, float]]]]):
         """
         Computes the NetMF Embeddings for the graph specified in data.
         :param data: The graph to encode. Either a string containing the path to an edgelist file, or an edgelist of the

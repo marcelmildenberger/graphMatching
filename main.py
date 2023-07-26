@@ -22,8 +22,8 @@ from encoders.non_encoder import NonEncoder
 from matchers.bipartite import MinWeightMatcher, GaleShapleyMatcher, SymmetricMatcher
 from utils import *
 
-def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
+def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
     if "intel" not in platform.processor().lower():
         print("This code uses Intel MKL to speed up computations, but a non-Intel CPU was detected on your system. "
               "We will now bypass the library's CPU check. If you encouter problems, set the BYPASS_CPU flag in main.py "
@@ -31,27 +31,67 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         if BYPASS_CPU: os.environ["MKL_DEBUG_CPU_TYPE"] = "5"
 
-    supported_matchings = ["MinWeight","Stable", "Symmetric"]
-    assert GLOBAL_CONFIG["Matching"] in supported_matchings, "Error: Matching method must be one of %s" % ((supported_matchings))
+    supported_matchings = ["MinWeight", "Stable", "Symmetric"]
+    assert GLOBAL_CONFIG["Matching"] in supported_matchings, "Error: Matching method must be one of %s" % (
+    (supported_matchings))
 
     supported_selections = ["Degree", "GroundTruth", "Centroids", "Random", "None", None]
-    assert ALIGN_CONFIG["Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % ((supported_selections))
+    assert ALIGN_CONFIG[
+               "Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % (
+    (supported_selections))
 
     if GLOBAL_CONFIG["BenchMode"]:
         start_total = time.time()
 
     # Compute hashes of configuration to store/load data and thus avoid redundant computations.
     # Using MD5 because Python's native hash() is not stable across processes
-    eve_enc_hash = md5(("%s-%s-%s-%s-%s" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],ENC_CONFIG["EveBits"],
-                                            ENC_CONFIG["EveN"],GLOBAL_CONFIG["Data"])).encode()).hexdigest()
-    alice_enc_hash = md5(("%s-%s-%s-%s-%s-%s" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],ENC_CONFIG["EveBits"],
-                                            ENC_CONFIG["EveN"],GLOBAL_CONFIG["Data"],
-                          GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+    if GLOBAL_CONFIG["DropFrom"] == "Alice":
 
-    eve_emb_hash = md5(("%s-%s-%s" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+        eve_enc_hash = md5(
+            ("%s-%s-%s-%s-%s-DropAlice" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
+                                 ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+        alice_enc_hash = md5(
+            ("%s-%s-%s-%s-%s-%s-DropAlice" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
+                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
+                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
-    alice_emb_hash = md5(("%s-%s-%s-%s" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                            GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+        eve_emb_hash = md5(
+            ("%s-%s-%s-DropAlice" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+
+        alice_emb_hash = md5(("%s-%s-%s-%s-DropAlice" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+                                               GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+    elif GLOBAL_CONFIG["DropFrom"] == "Eve":
+
+        eve_enc_hash = md5(
+            ("%s-%s-%s-%s-%s-%s-DropEve" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
+                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
+                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+
+        alice_enc_hash = md5(("%s-%s-%s-%s-%s-DropEve" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
+                                                  ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"],
+                                                  GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+
+        eve_emb_hash = md5(("%s-%s-%s-%s-DropEve" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+                                             GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+
+        alice_emb_hash = md5(("%s-%s-%s-DropEve" % (str(EMB_CONFIG), str(ENC_CONFIG),
+                                            GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+    else:
+        eve_enc_hash = md5(
+            ("%s-%s-%s-%s-%s-%s-DropBoth" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
+                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
+                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+
+        alice_enc_hash = md5(
+            ("%s-%s-%s-%s-%s-%s-DropBoth" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
+                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
+                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+
+        eve_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+                                             GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+
+        alice_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+                                               GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
     if os.path.isfile("./data/encoded/alice-%s.pck" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
@@ -59,8 +99,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "rb") as f:
             alice_enc, n_alice = pickle.load(f)
-            #alice_enc, n_alice = joblib.load(f)
-
+            # alice_enc, n_alice = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_enc = -1
@@ -72,11 +111,33 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         alice_data, alice_uids = read_tsv(GLOBAL_CONFIG["Data"])
 
-        # Subset and shuffle
-        selected = random.sample(range(len(alice_data)), int(GLOBAL_CONFIG["Overlap"] * len(alice_data)))
-        alice_data = [alice_data[i] for i in selected]
-        alice_uids = [alice_uids[i] for i in selected]
-        n_alice = len(alice_uids) # Initial number of records in alice's dataset. Required for success calculation
+        if GLOBAL_CONFIG["DropFrom"] == "Both":
+            # Compute the maximum number of overlapping records possible for the given dataset size and overlap
+            overlap_count = int(-(GLOBAL_CONFIG["Overlap"]*len(alice_data)/(GLOBAL_CONFIG["Overlap"]-2)))
+            # Randomly select the overlapping records from the set of available records (all records in the data)
+            available = list(range(len(alice_data)))
+            selected_overlap = random.sample(available, overlap_count)
+            # Remove the overlapping records from the set of available records to ensure that the remaining records are
+            # disjoint.
+            available = [i for i in available if i not in selected_overlap]
+            # Randomly select the records exclusively held by Alice
+            selected_alice = random.sample(available, int((len(alice_data) - overlap_count)/2))
+            # Remove Alice's records from the set of available records
+            available = [i for i in available if i not in selected_alice]
+            # Merge Alice's records with the overlapping records
+            selected_alice += selected_overlap
+            # Shuffle again because otherwise the order of the overlapping rows would be identical for Eve's and
+            # Alice's data.
+            selected_alice = random.sample(selected_alice, len(selected_alice))
+
+        else:
+            # Subset and shuffle
+            alice_ratio = GLOBAL_CONFIG["Overlap"] if GLOBAL_CONFIG["DropFrom"] == "Alice" else 1
+            selected_alice = random.sample(range(len(alice_data)), int(alice_ratio * len(alice_data)))
+
+        alice_data = [alice_data[i] for i in selected_alice]
+        alice_uids = [alice_uids[i] for i in selected_alice]
+        n_alice = len(alice_uids)  # Initial number of records in alice's dataset. Required for success calculation
 
         if GLOBAL_CONFIG["BenchMode"]:
             start_alice_enc = time.time()
@@ -99,11 +160,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "wb") as f:
             pickle.dump((alice_enc, n_alice), f, protocol=5)
-            #joblib.dump((alice_enc, n_alice), f, protocol=5, compress=3)
-
+            # joblib.dump((alice_enc, n_alice), f, protocol=5, compress=3)
 
     if GLOBAL_CONFIG["Verbose"]:
-            print("Computing Thresholds and subsetting data for Alice")
+        print("Computing Thresholds and subsetting data for Alice")
     # Compute the threshold value for subsetting
     tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
 
@@ -123,8 +183,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "rb") as f:
             eve_enc, n_eve = pickle.load(f)
-            #eve_enc, n_eve = joblib.load(f)
-
+            # eve_enc, n_eve = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = -1
@@ -135,9 +194,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
             print("Loading Eve's data")
         eve_data, eve_uids = read_tsv(GLOBAL_CONFIG["Data"])
 
-        selected = random.sample(range(len(eve_data)), len(eve_data))
-        eve_data = [eve_data[i] for i in selected]
-        eve_uids = [eve_uids[i] for i in selected]
+        if GLOBAL_CONFIG["DropFrom"] == "Both":
+            selected_eve = selected_overlap + available
+            selected_eve = random.sample(selected_eve, len(selected_eve))
+        else:
+            eve_ratio = GLOBAL_CONFIG["Overlap"] if GLOBAL_CONFIG["DropFrom"] == "Eve" else 1
+            selected_eve = random.sample(range(len(eve_data)), int(eve_ratio*len(eve_data)))
+
+        eve_data = [eve_data[i] for i in selected_eve]
+        eve_uids = [eve_uids[i] for i in selected_eve]
 
         n_eve = len(eve_uids)
 
@@ -146,7 +211,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         if ENC_CONFIG["EveEnc"]:
             eve_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
-                                          ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
+                                    ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
@@ -166,7 +231,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "wb") as f:
             pickle.dump((eve_enc, n_eve), f, protocol=5)
-            #joblib.dump((eve_enc, n_eve), f, protocol=5, compress=3)
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
@@ -186,8 +250,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/embeddings/alice-%s.pck" % alice_emb_hash, "rb") as f:
             alice_embedder = pickle.load(f)
-            #alice_embedder = joblib.load(f)
-
+            # alice_embedder = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_emb = -1
@@ -197,16 +260,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         if GLOBAL_CONFIG["BenchMode"]:
             start_alice_emb = time.time()
 
-        # # Compute the threshold value for subsetting
-        # tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
-        #
-        # # Only keep edges if their similarity is greater than the threshold
-        # alice_enc = [e for e in alice_enc if e[2] > tres]
-        #
-        # # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
-        # if EMB_CONFIG["AliceDiscretize"]:
-        #     alice_enc = [(e[0], e[1], 1) for e in alice_enc]
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Alice's data. This may take a while...")
 
@@ -214,13 +267,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
             save_tsv(alice_enc, "data/edgelists/alice.edg")
 
             alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
-                                         p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"], dim_embeddings=EMB_CONFIG["AliceDim"],
+                                         p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"],
+                                         dim_embeddings=EMB_CONFIG["AliceDim"],
                                          context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
                                          seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
             alice_embedder.train("./data/edgelists/alice.edg")
 
         else:
-            alice_embedder = NetMFEmbedder(EMB_CONFIG["AliceDim"], EMB_CONFIG["AliceContext"], EMB_CONFIG["AliceNegative"],
+            alice_embedder = NetMFEmbedder(EMB_CONFIG["AliceDim"], EMB_CONFIG["AliceContext"],
+                                           EMB_CONFIG["AliceNegative"],
                                            EMB_CONFIG["AliceNormalize"])
 
             alice_embedder.train(alice_enc)
@@ -236,14 +291,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/embeddings/alice-%s.pck" % alice_emb_hash, "wb") as f:
             pickle.dump(alice_embedder, f, protocol=5)
-            #joblib.dump(alice_embedder, f, protocol=5, compress=3)
+            # joblib.dump(alice_embedder, f, protocol=5, compress=3)
 
     # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
     # similarity.
     alice_embeddings, alice_uids = alice_embedder.get_vectors()
-
-    if ALIGN_CONFIG["Batchsize"] == "Auto":
-        ALIGN_CONFIG["Batchsize"] = len(alice_uids) - 50
 
     if os.path.isfile("./data/embeddings/eve-%s.pck" % eve_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
@@ -251,7 +303,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/embeddings/eve-%s.pck" % eve_emb_hash, "rb") as f:
             eve_embedder = pickle.load(f)
-            #eve_embedder = joblib.load(f)
+            # eve_embedder = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_emb = -1
@@ -274,8 +326,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
             eve_embedder.train("./data/edgelists/eve.edg")
         else:
             eve_embedder = NetMFEmbedder(EMB_CONFIG["EveDim"], EMB_CONFIG["EveContext"],
-                                           EMB_CONFIG["EveNegative"],
-                                           EMB_CONFIG["EveNormalize"])
+                                         EMB_CONFIG["EveNegative"],
+                                         EMB_CONFIG["EveNormalize"])
             eve_embedder.train(eve_enc)
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -289,9 +341,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
         with open("./data/embeddings/eve-%s.pck" % eve_emb_hash, "wb") as f:
             pickle.dump(eve_embedder, f, protocol=5)
-            #joblib.dump(eve_embedder, f, protocol=5, compress=3)
 
     eve_embeddings, eve_uids = eve_embedder.get_vectors()
+
+    if ALIGN_CONFIG["Batchsize"] == "Auto":
+        ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids))
 
     # Alignment
     if GLOBAL_CONFIG["BenchMode"]:
@@ -299,17 +353,18 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
     if ALIGN_CONFIG["Selection"] == "Degree":
         # Read the edgelists as NetworkX graphs so we can determine the degrees of the nodes.
-        #edgelist_alice = nx.read_weighted_edgelist("data/edgelists/alice.edg")
-        #edgelist_eve = nx.read_weighted_edgelist("data/edgelists/eve.edg")
-        edgelist_alice = nx.from_pandas_edgelist(pd.DataFrame(alice_enc, columns=["source","target","weight"]), edge_attr=True)
-        edgelist_eve = nx.from_pandas_edgelist(pd.DataFrame(eve_enc, columns=["source","target","weight"]), edge_attr=True)
+        # edgelist_alice = nx.read_weighted_edgelist("data/edgelists/alice.edg")
+        # edgelist_eve = nx.read_weighted_edgelist("data/edgelists/eve.edg")
+        edgelist_alice = nx.from_pandas_edgelist(pd.DataFrame(alice_enc, columns=["source", "target", "weight"]),
+                                                 edge_attr=True)
+        edgelist_eve = nx.from_pandas_edgelist(pd.DataFrame(eve_enc, columns=["source", "target", "weight"]),
+                                               edge_attr=True)
         degrees_alice = sorted(edgelist_alice.degree, key=lambda x: x[1], reverse=True)
         degrees_eve = sorted(edgelist_eve.degree, key=lambda x: x[1], reverse=True)
 
         if GLOBAL_CONFIG["DevMode"]:
             save_tsv(degrees_eve, "./dev/degrees_eve.tsv")
             save_tsv(degrees_alice, "./dev/degrees_alice.tsv")
-
 
         alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
         eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
@@ -347,8 +402,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         eve_sub = kmeans_eve.cluster_centers_
 
     elif ALIGN_CONFIG["Selection"] == "Random":
-        alice_sub = alice_embeddings
-        eve_sub = eve_embeddings[np.random.choice(eve_embeddings.shape[0], alice_embeddings.shape[0], replace=False), :]
+        if len(eve_uids) < len(alice_uids):
+            alice_sub = alice_embeddings
+            eve_sub = eve_embeddings[
+                      np.random.choice(eve_embeddings.shape[0], alice_embeddings.shape[0], replace=False), :]
+        else:
+            eve_sub = eve_embeddings
+            alice_sub = alice_embeddings[
+                        np.random.choice(alice_embeddings.shape[0], eve_embeddings.shape[0], replace=False), :]
 
     else:
         alice_sub = alice_embeddings
@@ -367,13 +428,22 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
 
     if ALIGN_CONFIG["Wasserstein"]:
         if ALIGN_CONFIG["RegWS"] == "Auto":
-            ALIGN_CONFIG["RegWS"] = min(0.2, len(alice_uids)*0.0001)
+            smallest_dataset_size = min(len(alice_uids), len(eve_uids))
+            if smallest_dataset_size > 2500:
+                ALIGN_CONFIG["RegWS"] = 0.1
+            else:
+                ALIGN_CONFIG["RegWS"] = max(0.02, smallest_dataset_size * 0.00002)
+            # est_overlap = min(len(alice_uids), len(eve_uids)) / max(len(alice_uids),len(eve_uids))
+            # if est_overlap > 0.5:
+            #     ALIGN_CONFIG["RegWS"] = 0.1
+            # else:
+            #     ALIGN_CONFIG["RegWS"] = max(0.02, (est_overlap/10)-0.01)
 
         aligner = WassersteinAligner(ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
-                                      ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"],ALIGN_CONFIG["NIterInit"],
-                                      ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], len(alice_uids),
-                                      ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
-                                      verbose=GLOBAL_CONFIG["Verbose"])
+                                     ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"], ALIGN_CONFIG["NIterInit"],
+                                     ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], len(alice_uids),
+                                     ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
+                                     verbose=GLOBAL_CONFIG["Verbose"])
     else:
         aligner = ProcrustesAligner()
 
@@ -405,13 +475,16 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
     # Evaluation
     correct = 0
     for eve, alice in mapping.items():
-        if eve[0] == "A":
+        if eve[0] == "S":
             continue
         if eve[1:] == alice[1:]:
             correct += 1
 
-    success_rate = correct/n_alice
-    print("Correct: %i of %i" % (correct, n_alice))
+    if GLOBAL_CONFIG["DropFrom"]:
+        success_rate = correct/overlap_count
+    else:
+        success_rate = correct / min(n_alice, n_eve)
+    print("Correct: %i of %i" % (correct, min(n_alice, n_eve)))
     print("Success rate: %f" % success_rate)
 
     if GLOBAL_CONFIG["BenchMode"]:
@@ -430,7 +503,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU = True):
         for key, val in ALIGN_CONFIG.items():
             keys.append(key)
             vals.append(val)
-        keys += ["success_rate","correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
+        keys += ["success_rate", "correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
                  "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping"]
 
         vals += [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
@@ -448,13 +521,14 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_1k.tsv",
-        "Overlap": 1,
+        "Data": "./data/fakename_2k.tsv",
+        "Overlap": 0.8,
+        "DropFrom": "Both",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
-        "BenchMode": True,  # Benchmark Mode
+        "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "euclidean",
-        "Matching": "Stable"
+        "Matching": "MinWeight"
     }
 
     ENC_CONFIG = {
@@ -470,35 +544,35 @@ if __name__ == "__main__":
         "EveN": 2,
         "EveMetric": "dice",
     }
-
     EMB_CONFIG = {
         "Algo": "NetMF",
         "AliceQuantile": 0.9,
         "AliceDiscretize": False,
-        "AliceDim": 128,
+        "AliceDim": 80,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
         "EveQuantile": 0.9,
         "EveDiscretize": False,
-        "EveDim": 128,
+        "EveDim": 80,
         "EveContext": 10,
         "EveNegative": 1,
         "EveNormalize": True,
         "Workers": -1,
     }
 
+
     ALIGN_CONFIG = {
         "RegWS": "Auto",
         "RegInit": 1,
         "Batchsize": "Auto",
-        "LR": 500.0,
+        "LR": 300.0,
         "NIterWS": 5,
         "NIterInit": 50,  # 800
         "NEpochWS": 200,
         "LRDecay": 0.95,
         "Sqrt": False,
-        "EarlyStopping": 50,
+        "EarlyStopping": 20,
         "Selection": "None",
         "Wasserstein": True,
     }

@@ -59,6 +59,7 @@ ALIGN_CONFIG = {
 # Global params
 datasets = ["fakename_1k.tsv", "fakename_2k.tsv", "fakename_5k.tsv", "fakename_10k.tsv", "fakename_20k.tsv",
             "fakename_50k.tsv", "fakename_100k.tsv"]
+datasets = ["fakename_1k.tsv", "fakename_2k.tsv"]
 overlap = [i/100 for i in range(10, 105, 5)]
 
 for d in datasets:
