@@ -21,16 +21,18 @@ def reduce_func(D_chunk, start):
         start += 1
     return res
 
+
 def reduce_func_sim(D_chunk, start):
     global tuids
     res = []
     for row in D_chunk:
         tmp = []
         for j, val in enumerate(row[0:start]):
-            tmp.append((tuids[start], tuids[j], 1-val))
+            tmp.append((tuids[start], tuids[j], 1 - val))
         res.append(tmp)
         start += 1
     return res
+
 
 class BFEncoder(Encoder):
 
@@ -91,22 +93,22 @@ class BFEncoder(Encoder):
         filter.
         """
         if not type(self.bits_per_feature) == int:
-            assert len(self.bits_per_feature) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
-                                                                                                                "values for bits_per_feature. Must either be one value or one value per attribute (" + str(
+            assert len(self.bits_per_feature) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of "\
+                "values for bits_per_feature. Must either be one value or one value per attribute (" + str(
                 len(data[0])) + ")."
 
         if not type(self.ngram_size) == int:
             assert len(self.ngram_size) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
-                                                                                                          "values for ngram_size. Must either be one value or one value per attribute (" + str(
+                "values for ngram_size. Must either be one value or one value per attribute (" + str(
                 len(data[0])) + ")."
 
-        #print("DEB: Schema")
+        # print("DEB: Schema")
         self.__create_schema(data)
-        #print("DEB: CLKs")
+        # print("DEB: CLKs")
         enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
         # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
-        #print("DEB: Stacking")
+        # print("DEB: Stacking")
         enc_data = np.stack([list(barr) for barr in enc_data]).astype(bool)
         return enc_data
 
@@ -128,10 +130,10 @@ class BFEncoder(Encoder):
                              "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
                              "sqeuclidean", "yule"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        #print("DEB: Encoding")
+        # print("DEB: Encoding")
         enc = self.encode(data)
         # Calculates pairwise distances between the provided data points
-        #print("DEB: PDist")
+        # print("DEB: PDist")
         global tuids
         tuids = uids
         if sim:
@@ -142,6 +144,5 @@ class BFEncoder(Encoder):
         for i in pw_metrics:
             pw_metrics_long += i
         pw_metrics_long = [item for row in pw_metrics_long for item in row]
-
 
         return pw_metrics_long
