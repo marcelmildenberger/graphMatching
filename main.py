@@ -480,7 +480,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
         if eve[1:] == alice[1:]:
             correct += 1
 
-    if GLOBAL_CONFIG["DropFrom"]:
+    if GLOBAL_CONFIG["DropFrom"] == "Both":
         success_rate = correct/overlap_count
     else:
         success_rate = correct / min(n_alice, n_eve)
