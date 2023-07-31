@@ -29,10 +29,10 @@ class NonEncoder(Encoder):
         for i in range(len(data)):
             for j in range(i+1, len(data)):
                 if sim:
-                    metric = comparator.similarity("".join(data[i]).replace(" ",""), "".join(data[j]).replace(" ",""))
+                    val = comparator.similarity("".join(data[i]).replace(" ",""), "".join(data[j]).replace(" ",""))
                 else:
-                    metric = comparator.distance("".join(data[i]).replace(" ",""), "".join(data[j]).replace(" ",""))
-                pw_metrics.append((uids[i], uids[j], metric))
+                    val = comparator.distance("".join(data[i]).replace(" ",""), "".join(data[j]).replace(" ",""))
+                pw_metrics.append((uids[i], uids[j], val))
 
         return pw_metrics
 
