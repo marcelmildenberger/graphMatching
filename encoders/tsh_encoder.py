@@ -269,10 +269,20 @@ class TSHEncoder():
         # Split each string in the data into a list of qgrams to process
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
 
+        cache = {}
+
         for i, q_i in tqdm(enumerate(data), desc="Encoding", total=len(data), disable=not self.verbose):
-            i_enc = self.encode(q_i)
+            if str(uids[i]) in cache:
+                i_enc = cache[str(uids[i])]
+            else:
+                i_enc = self.encode(q_i)
+                cache[str(uids[i])] = i_enc
             for j, q_j in enumerate(data[i + 1:]):
-                j_enc = self.encode(q_j)
+                if str(uids[j + i + 1]) in cache:
+                    j_enc = cache[str(uids[j + i + 1])]
+                else:
+                    j_enc = self.encode(q_j)
+                    cache[str(uids[j + i + 1])] = j_enc
                 if metric == "jaccard":
                     val = q_gram_jacc_sim(i_enc, j_enc)
                 else:

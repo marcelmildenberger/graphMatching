@@ -234,7 +234,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                      ENC_CONFIG["EveN"],
                                      random_seed=ENC_CONFIG["EveSecret"], verbose=GLOBAL_CONFIG["Verbose"])
         elif ENC_CONFIG["EveAlgo"] == "TwoStepHash":
-            alice_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
+            eve_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
                                        ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
                                        verbose=GLOBAL_CONFIG["Verbose"])
         else:
@@ -587,10 +587,10 @@ if __name__ == "__main__":
         "EveValLen": 128,
         # For 2SH encoding
         "AliceNHashFunc": 10,
-        "AliceNHashCol": 5,
+        "AliceNHashCol": 1000,
         "AliceRandMode": "PNG",
         "EveNHashFunc": 10,
-        "EveNHashCol": 5,
+        "EveNHashCol": 1000,
         "EveRandMode": "PNG"
     }
 
