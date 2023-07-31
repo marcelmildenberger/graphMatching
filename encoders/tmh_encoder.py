@@ -6,18 +6,41 @@
 # Jochen Schäfer, July 2023
 # -----------------------------------------------------------------------------
 
+import hashlib
 import itertools
 import random
 import bitarray
 import numpy as np
 from tqdm import trange, tqdm
-from sklearn.metrics import pairwise_distances
-from .encoder import Encoder
+from sklearn.metrics import pairwise_distances_chunked
 
 
 # =============================================================================
 
-class TabMinHashEncoding(Encoder):
+def reduce_func(D_chunk, start):
+    global tuids
+    res = []
+    for row in D_chunk:
+        tmp = []
+        for j, val in enumerate(row[0:start]):
+            tmp.append((tuids[start], tuids[j], val))
+        res.append(tmp)
+        start += 1
+    return res
+
+
+def reduce_func_sim(D_chunk, start):
+    global tuids
+    res = []
+    for row in D_chunk:
+        tmp = []
+        for j, val in enumerate(row[0:start]):
+            tmp.append((tuids[start], tuids[j], 1 - val))
+        res.append(tmp)
+        start += 1
+    return res
+
+class TMHEncoder():
     """A class that implements tabulation based min-hash encoding of string
        values into bit arrays for privacy-preserving record linkage, as proposed
        in:
@@ -219,7 +242,7 @@ class TabMinHashEncoding(Encoder):
 
             for q_gram in q_gram_set:
 
-                tab_hash_bit_array = get_tab_hash(q_gram, bit_pos)
+                tab_hash_bit_array = self.__get_tab_hash(q_gram, bit_pos)
 
                 if (min_hash_val == None):
                     min_hash_val = tab_hash_bit_array
@@ -241,20 +264,25 @@ class TabMinHashEncoding(Encoder):
                              "sqeuclidean", "yule"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
+        data = ["".join(d).replace(" ","") for d in data]
         # Split each string in the data into a list of qgrams to process
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
 
-        pw_metrics = []
         offset = 0
-        for i, uid_i in tqdm(zip(data, uids), desc="Computing similarities", disable=not self.verbose, total=len(uids)):
-            for j, uid_j in zip(data[offset:], uids[offset:]):
-                metric = pairwise_distances(np.asarray(list(self.__encode_q_gram_set(i))).astype(bool).reshape(1, -1),
-                                            np.asarray(list(self.__encode_q_gram_set(j))).astype(bool).reshape(1, -1),
-                                            metric="dice", n_jobs=-1)[0][0]
-                if sim:
-                    metric = 1 - metric
+        enc = []
+        for i in tqdm(data, desc="Encoding", disable=not self.verbose, total=len(uids)):
+            enc.append(self.__encode_q_gram_set(i))
 
-                pw_metrics.append((uid_i, uid_j, metric))
-            offset += 1
+        enc = np.stack([list(barr) for barr in enc]).astype(bool)
+        global tuids
+        tuids = uids
+        if sim:
+            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func_sim)
+        else:
+            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func)
+        pw_metrics_long = []
+        for i in pw_metrics:
+            pw_metrics_long += i
+        pw_metrics_long = [item for row in pw_metrics_long for item in row]
 
-        return pw_metrics
+        return pw_metrics_long
