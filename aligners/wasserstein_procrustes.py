@@ -48,7 +48,7 @@ class WassersteinAligner:
     def objective(self, R, n=1000):
         Xn, Yn = self.X[:n], self.Y[:n]
         C = -np.dot(np.dot(Xn, R), Yn.T)
-        P = ot.sinkhorn(np.ones(n), np.ones(n), C, 0.9, stopThr=1e-3)
+        P = ot.sinkhorn(np.ones(n), np.ones(n), C, 0.9, stopThr=1e-3, numItermax=2000)
         return 1000 * np.linalg.norm(np.dot(Xn, R) - np.dot(P, Yn)) / n
 
     def solve_procrustes(self, R):
@@ -70,7 +70,8 @@ class WassersteinAligner:
                 yt = self.Y[np.random.permutation(self.Y.shape[0])[:self.batchsize], :]
                 # compute OT on minibatch
                 C = -np.dot(np.dot(xt, R), yt.T)
-                P = ot.sinkhorn(np.ones(self.batchsize), np.ones(self.batchsize), C, self.reg_ws, stopThr=1e-3)
+                P = ot.sinkhorn(np.ones(self.batchsize), np.ones(self.batchsize), C, self.reg_ws, stopThr=1e-5,
+                                numItermax=2000)
                 # compute gradient
                 G = - np.dot(xt.T, np.dot(P, yt))
                 R -= self.lr / self.batchsize * G
