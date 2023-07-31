@@ -3,6 +3,7 @@
 from typing import Sequence, AnyStr, List, Tuple, Any, Union
 from .encoder import Encoder
 from strsimpy.sorensen_dice import SorensenDice
+from strsimpy.jaccard import Jaccard
 
 class NonEncoder(Encoder):
 
@@ -10,22 +11,27 @@ class NonEncoder(Encoder):
         """
 
         """
-        self.comparator = SorensenDice(ngram_size)
+        self.ngram_size = ngram_size
 
     def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
                            metric: str, sim: bool = True) -> List[Tuple[int, int, float]]:
         """
 
         """
-        available_metrics = ["dice"]
+
+        available_metrics = ["dice", "jaccard"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        if metric == "dice":
+            comparator = SorensenDice(self.ngram_size)
+        else:
+            comparator = Jaccard(self.ngram_size)
         pw_metrics = []
         for i in range(len(data)):
-            for j in range(i, len(data)):
+            for j in range(i+1, len(data)):
                 if sim:
-                    metric = self.comparator.similarity("".join(data[i]), "".join(data[j]))
+                    metric = comparator.similarity("".join(data[i]).replace(" ",""), "".join(data[j]).replace(" ",""))
                 else:
-                    metric = self.comparator.distance("".join(data[i]), "".join(data[j]))
+                    metric = comparator.distance("".join(data[i]).replace(" ",""), "".join(data[j]).replace(" ",""))
                 pw_metrics.append((uids[i], uids[j], metric))
 
         return pw_metrics
