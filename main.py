@@ -20,6 +20,7 @@ from embedders.node2vec import N2VEmbedder
 from embedders.netmf import NetMFEmbedder
 from encoders.bf_encoder import BFEncoder
 from encoders.tmh_encoder import TMHEncoder
+from encoders.tsh_encoder import TSHEncoder
 from encoders.non_encoder import NonEncoder
 from matchers.bipartite import MinWeightMatcher, GaleShapleyMatcher, SymmetricMatcher
 from matchers.spatial import NNMatcher
@@ -44,7 +45,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                "DropFrom"] in supported_drops, "Error: Data must be dropped from one of %s" % (
         (supported_drops))
 
-    supported_encs = ["BloomFilter", "TabMinHash", "None", None]
+    supported_encs = ["BloomFilter", "TabMinHash", "TwoStepHash", "None", None]
     assert (ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs), "Error: Encoding " \
                                     "method must be one of %s" % ((supported_encs))
 
@@ -151,6 +152,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        ENC_CONFIG["AliceKeyLen"], ENC_CONFIG["AliceValLen"], hashlib.md5,
                                        ENC_CONFIG["AliceN"],
                                        random_seed=ENC_CONFIG["AliceSecret"], verbose=GLOBAL_CONFIG["Verbose"])
+        elif ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
+            alice_encoder = TSHEncoder(ENC_CONFIG["AliceNHashFunc"], ENC_CONFIG["AliceNHashCol"], ENC_CONFIG["AliceN"],
+                                       ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
+                                       verbose=GLOBAL_CONFIG["Verbose"])
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
@@ -228,6 +233,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                      ENC_CONFIG["EveKeyLen"], ENC_CONFIG["EveValLen"], hashlib.md5,
                                      ENC_CONFIG["EveN"],
                                      random_seed=ENC_CONFIG["EveSecret"], verbose=GLOBAL_CONFIG["Verbose"])
+        elif ENC_CONFIG["EveAlgo"] == "TwoStepHash":
+            alice_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
+                                       ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
+                                       verbose=GLOBAL_CONFIG["Verbose"])
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
@@ -491,13 +500,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     if GLOBAL_CONFIG["BenchMode"]:
         elapsed_mapping = time.time() - start_mapping
+        elapsed_relevant = time.time() - start_alice_emb
 
     # Evaluation
     correct = 0
-    for eve, alice in mapping.items():
-        #if eve[0] == "S":
-        #     continue
-        if eve[1:] == alice[1:]:
+    for smaller, larger in mapping.items():
+        if smaller[0] == "L":
+            continue
+        if smaller[1:] == larger[1:]:
             correct += 1
 
     if GLOBAL_CONFIG["DropFrom"] == "Both":
@@ -526,10 +536,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             keys.append(key)
             vals.append(val)
         keys += ["success_rate", "correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
-                 "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping"]
+                 "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping",
+                 "elapsed_relevant"]
 
         vals += [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
-                 elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping]
+                 elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping,
+                 elapsed_relevant]
 
         if not os.path.isfile("./data/benchmark.tsv"):
             save_tsv([keys], "./data/benchmark.tsv")
@@ -544,7 +556,7 @@ if __name__ == "__main__":
 
     GLOBAL_CONFIG = {
         "Data": "./data/fakename_5k.tsv",
-        "Overlap": 0.55,
+        "Overlap": 0.8,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
@@ -554,13 +566,13 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "BloomFilter",
+        "AliceAlgo": "TwoStepHash",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
         "AliceBits": 30, # BF: 30, TMH: 1000
         "AliceN": 2,
         "AliceMetric": "dice",
-        "EveAlgo": "BloomFilter",
+        "EveAlgo": "TwoStepHash",
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
         "EveBits": 30, # BF: 30, TMH: 1000
@@ -573,18 +585,25 @@ if __name__ == "__main__":
         "EveTables": 8,
         "EveKeyLen": 8,
         "EveValLen": 128,
+        # For 2SH encoding
+        "AliceNHashFunc": 10,
+        "AliceNHashCol": 5,
+        "AliceRandMode": "PNG",
+        "EveNHashFunc": 10,
+        "EveNHashCol": 5,
+        "EveRandMode": "PNG"
     }
 
     EMB_CONFIG = {
         "Algo": "NetMF",
         "AliceQuantile": 0.1,
-        "AliceDiscretize": False,
+        "AliceDiscretize": True,
         "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
         "EveQuantile": 0.1,
-        "EveDiscretize": False,
+        "EveDiscretize": True,
         "EveDim": 128,
         "EveContext": 10,
         "EveNegative": 1,
