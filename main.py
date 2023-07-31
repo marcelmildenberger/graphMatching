@@ -1,3 +1,4 @@
+import hashlib
 import os
 import platform
 import pickle
@@ -18,27 +19,34 @@ from aligners.wasserstein_procrustes import WassersteinAligner
 from embedders.node2vec import N2VEmbedder
 from embedders.netmf import NetMFEmbedder
 from encoders.bf_encoder import BFEncoder
+from encoders.tmh_encoder import TMHEncoder
 from encoders.non_encoder import NonEncoder
 from matchers.bipartite import MinWeightMatcher, GaleShapleyMatcher, SymmetricMatcher
+from matchers.spatial import NNMatcher
 from utils import *
 
 
-def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
-    if "intel" not in platform.processor().lower():
-        print("This code uses Intel MKL to speed up computations, but a non-Intel CPU was detected on your system. "
-              "We will now bypass the library's CPU check. If you encouter problems, set the BYPASS_CPU flag in main.py "
-              "to False.")
+def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
-        if BYPASS_CPU: os.environ["MKL_DEBUG_CPU_TYPE"] = "5"
 
-    supported_matchings = ["MinWeight", "Stable", "Symmetric"]
+    # Sanity Check: Ensure that valid options were specified by the user
+    supported_matchings = ["MinWeight", "Stable", "Symmetric", "NearestNeighbor"]
     assert GLOBAL_CONFIG["Matching"] in supported_matchings, "Error: Matching method must be one of %s" % (
-    (supported_matchings))
+        (supported_matchings))
 
     supported_selections = ["Degree", "GroundTruth", "Centroids", "Random", "None", None]
     assert ALIGN_CONFIG[
                "Selection"] in supported_selections, "Error: Selection method for alignment subset must be one of %s" % (
-    (supported_selections))
+        (supported_selections))
+
+    supported_drops = ["Alice", "Eve", "Both"]
+    assert GLOBAL_CONFIG[
+               "DropFrom"] in supported_drops, "Error: Data must be dropped from one of %s" % (
+        (supported_drops))
+
+    supported_encs = ["BloomFilter", "TabMinHash", "None", None]
+    assert (ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs), "Error: Encoding " \
+                                    "method must be one of %s" % ((supported_encs))
 
     if GLOBAL_CONFIG["BenchMode"]:
         start_total = time.time()
@@ -48,50 +56,43 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
     if GLOBAL_CONFIG["DropFrom"] == "Alice":
 
         eve_enc_hash = md5(
-            ("%s-%s-%s-%s-%s-DropAlice" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
-                                 ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+            ("%s-%s-DropAlice" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
         alice_enc_hash = md5(
-            ("%s-%s-%s-%s-%s-%s-DropAlice" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
-                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
-                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+            ("%s-%s-%s-DropAlice" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+                                     GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
         eve_emb_hash = md5(
             ("%s-%s-%s-DropAlice" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
 
         alice_emb_hash = md5(("%s-%s-%s-%s-DropAlice" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                               GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+                                                         GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
     elif GLOBAL_CONFIG["DropFrom"] == "Eve":
 
         eve_enc_hash = md5(
-            ("%s-%s-%s-%s-%s-%s-DropEve" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
-                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
-                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+            ("%s-%s-%s-DropEve" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
+                                   GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
-        alice_enc_hash = md5(("%s-%s-%s-%s-%s-DropEve" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
-                                                  ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"],
-                                                  GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+        alice_enc_hash = md5(("%s-%s-DropEve" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
 
         eve_emb_hash = md5(("%s-%s-%s-%s-DropEve" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                             GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+                                                     GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
         alice_emb_hash = md5(("%s-%s-%s-DropEve" % (str(EMB_CONFIG), str(ENC_CONFIG),
-                                            GLOBAL_CONFIG["Data"])).encode()).hexdigest()
+                                                    GLOBAL_CONFIG["Data"])).encode()).hexdigest()
     else:
         eve_enc_hash = md5(
-            ("%s-%s-%s-%s-%s-%s-DropBoth" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
-                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
+            ("%s-%s-%s-DropBoth" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
                                     GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
         alice_enc_hash = md5(
-            ("%s-%s-%s-%s-%s-%s-DropBoth" % (ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"], ENC_CONFIG["EveBits"],
-                                    ENC_CONFIG["EveN"], GLOBAL_CONFIG["Data"],
+            ("%s-%s-%s-DropBoth" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
                                     GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
         eve_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                             GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+                                                      GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
         alice_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                               GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+                                                        GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
     if os.path.isfile("./data/encoded/alice-%s.pck" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
@@ -113,7 +114,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
 
         if GLOBAL_CONFIG["DropFrom"] == "Both":
             # Compute the maximum number of overlapping records possible for the given dataset size and overlap
-            overlap_count = int(-(GLOBAL_CONFIG["Overlap"]*len(alice_data)/(GLOBAL_CONFIG["Overlap"]-2)))
+            overlap_count = int(-(GLOBAL_CONFIG["Overlap"] * len(alice_data) / (GLOBAL_CONFIG["Overlap"] - 2)))
             # Randomly select the overlapping records from the set of available records (all records in the data)
             available = list(range(len(alice_data)))
             selected_overlap = random.sample(available, overlap_count)
@@ -121,7 +122,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
             # disjoint.
             available = [i for i in available if i not in selected_overlap]
             # Randomly select the records exclusively held by Alice
-            selected_alice = random.sample(available, int((len(alice_data) - overlap_count)/2))
+            selected_alice = random.sample(available, int((len(alice_data) - overlap_count) / 2))
             # Remove Alice's records from the set of available records
             available = [i for i in available if i not in selected_alice]
             # Merge Alice's records with the overlapping records
@@ -142,12 +143,22 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
         if GLOBAL_CONFIG["BenchMode"]:
             start_alice_enc = time.time()
 
-        alice_bloom_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
-                                        ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
+        if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
+            alice_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
+                                      ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
+        elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
+            alice_encoder = TMHEncoder(ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceTables"],
+                                       ENC_CONFIG["AliceKeyLen"], ENC_CONFIG["AliceValLen"], hashlib.md5,
+                                       ENC_CONFIG["AliceN"],
+                                       random_seed=ENC_CONFIG["AliceSecret"], verbose=GLOBAL_CONFIG["Verbose"])
+        else:
+            alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Alice's Data")
-        alice_enc = alice_bloom_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"])
+        alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=False)
+
+        del alice_data
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_enc = time.time() - start_alice_enc
@@ -168,7 +179,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
     tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
 
     # Only keep edges if their similarity is greater than the threshold
-    alice_enc = [e for e in alice_enc if e[2] > tres]
+    alice_enc = [e for e in alice_enc if e[2] < tres]
 
     # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
     if EMB_CONFIG["AliceDiscretize"]:
@@ -199,7 +210,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
             selected_eve = random.sample(selected_eve, len(selected_eve))
         else:
             eve_ratio = GLOBAL_CONFIG["Overlap"] if GLOBAL_CONFIG["DropFrom"] == "Eve" else 1
-            selected_eve = random.sample(range(len(eve_data)), int(eve_ratio*len(eve_data)))
+            selected_eve = random.sample(range(len(eve_data)), int(eve_ratio * len(eve_data)))
 
         eve_data = [eve_data[i] for i in selected_eve]
         eve_uids = [eve_uids[i] for i in selected_eve]
@@ -209,16 +220,22 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
         if GLOBAL_CONFIG["BenchMode"]:
             start_eve_enc = time.time()
 
-        if ENC_CONFIG["EveEnc"]:
+        if ENC_CONFIG["EveAlgo"] == "BloomFilter":
             eve_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
                                     ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
+        elif ENC_CONFIG["EveAlgo"] == "TabMinHash":
+            eve_encoder = TMHEncoder(ENC_CONFIG["EveBits"], ENC_CONFIG["EveTables"],
+                                     ENC_CONFIG["EveKeyLen"], ENC_CONFIG["EveValLen"], hashlib.md5,
+                                     ENC_CONFIG["EveN"],
+                                     random_seed=ENC_CONFIG["EveSecret"], verbose=GLOBAL_CONFIG["Verbose"])
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Eve's Data")
 
-        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"])
+        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=False)
+        del eve_data
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = time.time() - start_eve_enc
@@ -236,7 +253,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
         print("Computing Thresholds and subsetting data for Eve")
 
     tres = np.quantile([e[2] for e in eve_enc], EMB_CONFIG["EveQuantile"])
-    eve_enc = [e for e in eve_enc if e[2] > tres]
+    eve_enc = [e for e in eve_enc if e[2] < tres]
 
     if EMB_CONFIG["EveDiscretize"]:
         eve_enc = [(e[0], e[1], 1) for e in eve_enc]
@@ -369,6 +386,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
         alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
         eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
 
+        del edgelist_eve, edgelist_alice, degrees_eve, degrees_alice
+
     elif ALIGN_CONFIG["Selection"] == "GroundTruth":
         alice_sub = [alice_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
         eve_sub = [eve_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
@@ -415,6 +434,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
         alice_sub = alice_embeddings
         eve_sub = eve_embeddings
 
+    del alice_enc, eve_enc, alice_embedder, eve_embedder
+
     if ALIGN_CONFIG["Selection"] in ["Degree", "GroundTruth"]:
         alice_sub = np.stack(alice_sub, axis=0)
         eve_sub = np.stack(eve_sub, axis=0)
@@ -429,10 +450,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
     if ALIGN_CONFIG["Wasserstein"]:
         if ALIGN_CONFIG["RegWS"] == "Auto":
             smallest_dataset_size = min(len(alice_uids), len(eve_uids))
-            if smallest_dataset_size > 2500:
-                ALIGN_CONFIG["RegWS"] = 0.1
-            else:
-                ALIGN_CONFIG["RegWS"] = max(0.02, smallest_dataset_size * 0.00002)
+            ALIGN_CONFIG["RegWS"] = min(0.1, max(0.02, smallest_dataset_size * 0.00001))
             # est_overlap = min(len(alice_uids), len(eve_uids)) / max(len(alice_uids),len(eve_uids))
             # if est_overlap > 0.5:
             #     ALIGN_CONFIG["RegWS"] = 0.1
@@ -466,6 +484,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
         matcher = GaleShapleyMatcher(GLOBAL_CONFIG["MatchingMetric"])
     elif GLOBAL_CONFIG["Matching"] == "Symmetric":
         matcher = SymmetricMatcher(GLOBAL_CONFIG["MatchingMetric"])
+    elif GLOBAL_CONFIG["Matching"] == "NearestNeighbor":
+        matcher = NNMatcher(GLOBAL_CONFIG["MatchingMetric"])
 
     mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
 
@@ -475,16 +495,18 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=True):
     # Evaluation
     correct = 0
     for eve, alice in mapping.items():
-        if eve[0] == "S":
-            continue
+        #if eve[0] == "S":
+        #     continue
         if eve[1:] == alice[1:]:
             correct += 1
 
     if GLOBAL_CONFIG["DropFrom"] == "Both":
-        success_rate = correct/overlap_count
+        success_rate = correct / overlap_count
+        print("Correct: %i of %i" % (correct, overlap_count))
     else:
         success_rate = correct / min(n_alice, n_eve)
-    print("Correct: %i of %i" % (correct, min(n_alice, n_eve)))
+        print("Correct: %i of %i" % (correct, min(n_alice, n_eve)))
+
     print("Success rate: %f" % success_rate)
 
     if GLOBAL_CONFIG["BenchMode"]:
@@ -521,46 +543,54 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_2k.tsv",
-        "Overlap": 0.8,
-        "DropFrom": "Both",
+        "Data": "./data/fakename_5k.tsv",
+        "Overlap": 0.55,
+        "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "euclidean",
-        "Matching": "MinWeight"
+        "Matching": "NearestNeighbor"
     }
 
     ENC_CONFIG = {
+        "AliceAlgo": "BloomFilter",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
-        "AliceBits": 30,
+        "AliceBits": 30, # BF: 30, TMH: 1000
         "AliceN": 2,
         "AliceMetric": "dice",
-        "EveEnc": True,
+        "EveAlgo": "BloomFilter",
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 30,
+        "EveBits": 30, # BF: 30, TMH: 1000
         "EveN": 2,
         "EveMetric": "dice",
+        # For TMH encoding
+        "AliceTables": 8,
+        "AliceKeyLen": 8,
+        "AliceValLen": 128,
+        "EveTables": 8,
+        "EveKeyLen": 8,
+        "EveValLen": 128,
     }
+
     EMB_CONFIG = {
         "Algo": "NetMF",
-        "AliceQuantile": 0.9,
+        "AliceQuantile": 0.1,
         "AliceDiscretize": False,
-        "AliceDim": 80,
+        "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
-        "EveQuantile": 0.9,
+        "EveQuantile": 0.1,
         "EveDiscretize": False,
-        "EveDim": 80,
+        "EveDim": 128,
         "EveContext": 10,
         "EveNegative": 1,
         "EveNormalize": True,
         "Workers": -1,
     }
-
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
@@ -570,11 +600,11 @@ if __name__ == "__main__":
         "NIterWS": 5,
         "NIterInit": 50,  # 800
         "NEpochWS": 200,
-        "LRDecay": 0.95,
+        "LRDecay": 0.9,
         "Sqrt": False,
         "EarlyStopping": 20,
         "Selection": "None",
         "Wasserstein": True,
     }
 
-    mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, BYPASS_CPU=False)
+    mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
