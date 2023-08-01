@@ -17,28 +17,26 @@ from sklearn.metrics import pairwise_distances_chunked
 
 # =============================================================================
 
-def reduce_func(D_chunk, start):
-    global tuids
-    res = []
-    for row in D_chunk:
-        tmp = []
-        for j, val in enumerate(row[0:start]):
-            tmp.append((tuids[start], tuids[j], val))
-        res.append(tmp)
-        start += 1
-    return res
+def bit_array_one_bit_jacc_sim(ba1, ba2):
+    """Calculate the Jaccard similarity between the two given bit arrays
+       considering only 1 bit positions.
 
+       Returns a similarity value between 0 and 1.
+    """
 
-def reduce_func_sim(D_chunk, start):
-    global tuids
-    res = []
-    for row in D_chunk:
-        tmp = []
-        for j, val in enumerate(row[0:start]):
-            tmp.append((tuids[start], tuids[j], 1 - val))
-        res.append(tmp)
-        start += 1
-    return res
+    common_bit_pos = ba1 & ba2  # XOR of the two input bit arrays
+    num_comm_bit_pos = common_bit_pos.count(1)
+
+    all_1_bit_pos = ba1 | ba2
+    num_all_1_bit_pos = all_1_bit_pos.count(1)
+
+    ba_jacc_sim = float(num_comm_bit_pos) / num_all_1_bit_pos
+
+    # Possibly a similarity below 0 if more than half of the bit positions differ
+    #
+    ba_jacc_sim = max(0.0, ba_jacc_sim)
+
+    return ba_jacc_sim
 
 class TMHEncoder():
     """A class that implements tabulation based min-hash encoding of string
@@ -257,32 +255,32 @@ class TMHEncoder():
         return q_gram_bit_array
 
     def encode_and_compare(self, data, uids, metric, sim=True):
-        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
-                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
-                             "matching",
-                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
-                             "sqeuclidean", "yule"]
+        available_metrics = ["jaccard"]
+
+        pw_metrics = []
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
-        data = ["".join(d).replace(" ","") for d in data]
+        data = ["".join(d).replace(" ", "").lower() for d in data]
         # Split each string in the data into a list of qgrams to process
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
 
-        offset = 0
-        enc = []
-        for i in tqdm(data, desc="Encoding", disable=not self.verbose, total=len(uids)):
-            enc.append(self.__encode_q_gram_set(i))
+        cache = {}
 
-        enc = np.stack([list(barr) for barr in enc]).astype(bool)
-        global tuids
-        tuids = uids
-        if sim:
-            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func_sim)
-        else:
-            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func)
-        pw_metrics_long = []
-        for i in pw_metrics:
-            pw_metrics_long += i
-        pw_metrics_long = [item for row in pw_metrics_long for item in row]
+        for i, q_i in tqdm(enumerate(data), desc="Encoding", total=len(data), disable=not self.verbose):
+            if str(uids[i]) in cache:
+                i_enc = cache[str(uids[i])]
+            else:
+                i_enc = self.__encode_q_gram_set(q_i)
+                cache[str(uids[i])] = i_enc
+            for j, q_j in enumerate(data[i + 1:]):
+                if str(uids[j + i + 1]) in cache:
+                    j_enc = cache[str(uids[j + i + 1])]
+                else:
+                    j_enc = self.__encode_q_gram_set(q_j)
+                    cache[str(uids[j + i + 1])] = j_enc
+                val = bit_array_one_bit_jacc_sim(i_enc, j_enc)
+                if not sim:
+                    val = 1 - val
+                pw_metrics.append((uids[i], uids[j + i + 1], val))
 
-        return pw_metrics_long
+        return pw_metrics
