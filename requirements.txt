@@ -9,5 +9,4 @@ tqdm~=4.65.0
 scikit-learn~=1.2.2
 POT~=0.9.0
 typing-extensions~=4.6.3
-strsimpy~=0.1.9
 aesara~=2.9.1
