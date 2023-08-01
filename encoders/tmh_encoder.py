@@ -3,41 +3,43 @@
 #
 # Peter Christen, June to September 2018
 # Youzhe Heng, October 2020
-# Jochen Schäfer, July 2023
+# Performance optimizations by Jochen Schäfer, July 2023
 # -----------------------------------------------------------------------------
-
-import hashlib
-import itertools
 import random
-import bitarray
 import numpy as np
 from tqdm import trange, tqdm
 from sklearn.metrics import pairwise_distances_chunked
 
+def jaccard_sim(D_chunk, start):
+    global tuids
+    global n_bits
+    res = []
+    for row in D_chunk:
+        tmp = []
+        for j, val in enumerate(row[0:start]):
+            # Compute the approximated jaccard similarity
+            val = max(0.0, 1.0 - 2.0 * float(val) / n_bits)
+            tmp.append((tuids[start], tuids[j], val))
+        res.append(tmp)
+        start += 1
+    return res
+
+
+def jaccard_dist(D_chunk, start):
+    global tuids
+    global n_bits
+    res = []
+    for row in D_chunk:
+        tmp = []
+        for j, val in enumerate(row[0:start]):
+            # Compute the approximated jaccard similarity
+            val = max(0.0, 1.0 - 2.0 * float(val) / n_bits)
+            tmp.append((tuids[start], tuids[j], 1 - val))
+        res.append(tmp)
+        start += 1
+    return res
 
 # =============================================================================
-
-def bit_array_one_bit_jacc_sim(ba1, ba2):
-    """Calculate the Jaccard similarity between the two given bit arrays
-       considering only 1 bit positions.
-
-       Returns a similarity value between 0 and 1.
-    """
-
-    common_bit_pos = ba1 & ba2  # XOR of the two input bit arrays
-    num_comm_bit_pos = common_bit_pos.count(1)
-
-    all_1_bit_pos = ba1 | ba2
-    num_all_1_bit_pos = all_1_bit_pos.count(1)
-
-    ba_jacc_sim = float(num_comm_bit_pos) / num_all_1_bit_pos
-
-    # Possibly a similarity below 0 if more than half of the bit positions differ
-    #
-    ba_jacc_sim = max(0.0, ba_jacc_sim)
-
-    return ba_jacc_sim
-
 class TMHEncoder():
     """A class that implements tabulation based min-hash encoding of string
        values into bit arrays for privacy-preserving record linkage, as proposed
@@ -86,135 +88,65 @@ class TMHEncoder():
         self.ngram_size = ngram_size
         self.verbose = verbose
 
-        print('Generating list with %d tabulation hash tables, each with %d ' % \
-              (num_hash_bits, num_tables) + 'tables, each table with %d ' % \
-              (2 ** key_len) + 'entries (key length %d bits and value length %d' % \
-              (key_len, val_len) + ' bits)')
-        print()
-
-        tab_hash_table_list = []  # The 'num_hash_bits' tabulation hash tables
+        if verbose:
+            print('Generating list with %d tabulation hash tables, each with %d ' % \
+                  (num_hash_bits, num_tables) + 'tables, each table with %d ' % \
+                  (2 ** key_len) + 'entries (key length %d bits and value length %d' % \
+                  (key_len, val_len) + ' bits)')
+            print()
 
         if random_seed != None:
             random.seed(random_seed)
 
-        for hash_bit in trange(num_hash_bits, desc="Initializing hash tables", disable=not self.verbose):
-
-            # The list of hash tables to be generated for a certain bit position,
-            # where each will be a dictionary with bit strings of length 'key_len'
-            # as keys and values being bit arrays of length 'val_len'
-            #
-            bit_pos_tab_hash_table = []
-
-            # Generate all binary values from 0..0 to 1...1 of length 'key_len' bits
-            # and for each generate a random bit array of length 'val_len'.
-
-            # Use itertools to generate all sub-sets of positions to be set to 1
-            #
-            all_bit_pos = range(key_len)
-            key_bit_array_list = []
-
-            for sub_set_len in range(key_len + 1):
-                for pos_sub_set in itertools.combinations(all_bit_pos, sub_set_len):
-
-                    # Generate an empty (all zero) bit array of length 'key_len' and set
-                    # all bits with the indices given in the generated position sub set
-                    #
-                    table_key_bit_array = bitarray.bitarray(key_len)
-                    table_key_bit_array.setall(0)
-
-                    for pos in pos_sub_set:
-                        table_key_bit_array[pos] = 1
-
-                    # Note bitarrays cannot be dictionary keys, so convert into strings
-                    #
-                    key_bit_array_list.append(table_key_bit_array.to01())
-
-            assert len(key_bit_array_list) == 2 ** key_len, \
-                (len(key_bit_array_list), 2 ** key_len)
-
-            for t in range(num_tables):
-
-                table_dict = {}
-
-                # For each unique bit position set generate a bit array of length
-                # 'val_len' with randomly set bits to 0 or 1 (50% likelihood each)
-                #
-                for table_key_bit_array_str in key_bit_array_list:
-                    table_val_bit_array = bitarray.bitarray(val_len)
-                    table_val_bit_array.setall(0)
-
-                    for pos in range(val_len):
-                        table_val_bit_array[pos] = random.choice([0, 1])
-
-                    table_dict[table_key_bit_array_str] = table_val_bit_array
-
-                assert len(table_dict) == len(key_bit_array_list)
-
-                bit_pos_tab_hash_table.append(table_dict)
-
-            tab_hash_table_list.append(bit_pos_tab_hash_table)
-
-        assert len(tab_hash_table_list) == num_hash_bits
-
-        self.tab_hash_table_list = tab_hash_table_list
-
-    # ---------------------------------------------------------------------------
+        # Create multi-dimendsinal array of random bits
+        self.hashtables = np.random.randint(2, size=(num_hash_bits, num_tables, 2 ** key_len, val_len))
 
     def __get_tab_hash(self, in_str, bit_pos):
         """Generate a tabulation hash for the given input string based on the
-           tabulation hash tables for the given bit position, by retrieving
-           'num_tables' tabulation hash values from table entries based on the
-           hashed input string value.
+       tabulation hash tables for the given bit position, by retrieving
+       'num_tables' tabulation hash values from table entries based on the
+       hashed input string value.
 
-           Input arguments:
-             - in_str   The string to be hashed.
-             - bit_pos  The bit position for which the tabulation hash should be
-                        generated.
+       Input arguments:
+         - in_str   The string to be hashed.
+         - bit_pos  The bit position for which the tabulation hash should be
+                    generated.
 
-           Output:
-             - tab_hash_bit_array  A bit array generated from the corresponding
-                                   tabulation hash tables.
+       Output:
+         - tab_hash_bit_array  A bit array generated from the corresponding
+                               tabulation hash tables.
         """
-
         assert bit_pos >= 0 and bit_pos < self.num_hash_bits
-
         num_tables = self.num_tables
         key_len = self.key_len
 
         # Get the tabulation hash table for the desired bit position
         #
-        tab_hash_table = self.tab_hash_table_list[bit_pos]
-
+        tab_hashtable = self.hashtables[bit_pos]
         # Generate the bit array for the input string based on the given hash
         # function
         #
-        encoded_in_str = in_str.encode()
-        hash_hex_digest = self.hash_funct(encoded_in_str).hexdigest()
+
+        hash_hex_digest = self.hash_funct(in_str.encode()).hexdigest()
         hash_int = int(hash_hex_digest, 16)
         hash_bit_array_str = bin(hash_int)[2:]  # Remove leading '0b'
-        # print hash_bit_array_str
-
         # Now take the lowest 'key_len' bits from the hash bit array string and
         # use them to get the initial tabulation hash value
         #
-        tab_hash_table_key = hash_bit_array_str[-key_len:]
-
+        tab_hashtable_key = hash_bit_array_str[-key_len:]
         # Get the random bit pattern from the first table
         #
-        tab_hash_bit_array = tab_hash_table[0][tab_hash_table_key].copy()
-
+        tab_hash_bit_array = tab_hashtable[0][int(tab_hashtable_key, 2)].copy()
         # And XOR with the remaining extracted tabulation hashing table values
         #
         for t in range(1, num_tables):
-            tab_hash_table_key = hash_bit_array_str[-key_len * (t + 1):-key_len * t]
+            tab_hashtable_key = hash_bit_array_str[-key_len * (t + 1):-key_len * t]
 
             # XOR (^) of table hash values
             #
-            tab_hash_bit_array ^= tab_hash_table[t][tab_hash_table_key]
+            tab_hash_bit_array ^= tab_hashtable[t][int(tab_hashtable_key, 2)]
 
         return tab_hash_bit_array
-
-    # ---------------------------------------------------------------------------
 
     def __encode_q_gram_set(self, q_gram_set):
         """Apply tabulation based min hashing on the given input q-gram set and
@@ -229,58 +161,65 @@ class TMHEncoder():
 
         num_hash_bits = self.num_hash_bits  # Short-cuts
         get_tab_hash = self.__get_tab_hash
-
-        # Generate the final bit array to be returned
-        #
-        q_gram_bit_array = bitarray.bitarray(num_hash_bits)
+        q_gram_bit_array = np.zeros(self.num_hash_bits, dtype=int)
 
         for bit_pos in range(num_hash_bits):
 
             min_hash_val = None  # Only keep the minimum min hash value
+            min_hash_arr = None
 
             for q_gram in q_gram_set:
 
                 tab_hash_bit_array = self.__get_tab_hash(q_gram, bit_pos)
-
+                # Calculate the integer value of the hash in the bit array
+                cur_hash_val = tab_hash_bit_array.dot(1 << np.arange(tab_hash_bit_array.shape[-1] - 1, -1, -1))
                 if (min_hash_val == None):
-                    min_hash_val = tab_hash_bit_array
+                    min_hash_val = cur_hash_val
+                    min_hash_arr = tab_hash_bit_array
                 else:
-                    min_hash_val = min(min_hash_val, tab_hash_bit_array)
+                    if cur_hash_val < min_hash_val:
+                        min_hash_val = cur_hash_val
+                        min_hash_arr = tab_hash_bit_array
 
-            # Get the last bit of the smallest tabulation hash value and insert into
-            # the final bit array
-            #
-            q_gram_bit_array[bit_pos] = min_hash_val[-1]
+                # Get the last bit of the smallest tabulation hash value and insert into
+                # the final bit array
+                #
+            q_gram_bit_array[bit_pos] = min_hash_arr[-1]
 
         return q_gram_bit_array
 
     def encode_and_compare(self, data, uids, metric, sim=True):
         available_metrics = ["jaccard"]
-
-        pw_metrics = []
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
-        data = ["".join(d).replace(" ", "").lower() for d in data]
+        data = ["".join(d).replace(" ","") for d in data]
         # Split each string in the data into a list of qgrams to process
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
 
-        cache = {}
+        offset = 0
+        enc = []
+        for i in tqdm(data, desc="Encoding", disable=not self.verbose, total=len(uids)):
+            enc.append(self.__encode_q_gram_set(i))
 
-        for i, q_i in tqdm(enumerate(data), desc="Encoding", total=len(data), disable=not self.verbose):
-            if str(uids[i]) in cache:
-                i_enc = cache[str(uids[i])]
-            else:
-                i_enc = self.__encode_q_gram_set(q_i)
-                cache[str(uids[i])] = i_enc
-            for j, q_j in enumerate(data[i + 1:]):
-                if str(uids[j + i + 1]) in cache:
-                    j_enc = cache[str(uids[j + i + 1])]
-                else:
-                    j_enc = self.__encode_q_gram_set(q_j)
-                    cache[str(uids[j + i + 1])] = j_enc
-                val = bit_array_one_bit_jacc_sim(i_enc, j_enc)
-                if not sim:
-                    val = 1 - val
-                pw_metrics.append((uids[i], uids[j + i + 1], val))
+        enc = np.stack(enc).astype(bool)
+        global tuids
+        tuids = uids
+        global n_bits
+        n_bits = self.num_hash_bits
+        if sim:
+            # There is no sklearn/scipy implementation for the approximated jaccard metric used in TabMinHash.
+            # However, we still want to use sklearn's pairwise_distances_chunked because of performance and
+            # to avoid running out of memory. We can compute the cityblock/manhatten distance though, which, in case
+            # of binary inputs, is equal to the number of different bits. The actual computation of approximate jaccard
+            # is perfomed in the reduce function.
+            # This is a somewhat hacky solution, but I currently can't think of a better one.
+            # Jochen, 2023
+            pw_metrics = pairwise_distances_chunked(enc, metric="cityblock", n_jobs=-1, reduce_func=jaccard_sim)
+        else:
+            pw_metrics = pairwise_distances_chunked(enc, metric="cityblock", n_jobs=-1, reduce_func=jaccard_dist)
+        pw_metrics_long = []
+        for i in pw_metrics:
+            pw_metrics_long += i
+        pw_metrics_long = [item for row in pw_metrics_long for item in row]
 
-        return pw_metrics
+        return pw_metrics_long
