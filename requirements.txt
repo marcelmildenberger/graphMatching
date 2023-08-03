@@ -10,3 +10,4 @@ scikit-learn~=1.2.2
 POT~=0.9.0
 typing-extensions~=4.6.3
 aesara~=2.9.1
+sparse_dot_mkl~=0.8.3
