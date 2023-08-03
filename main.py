@@ -270,6 +270,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Eve's data.")
 
+    if GLOBAL_CONFIG["BenchMode"]:
+        start_alice_emb = time.time()
+
     if os.path.isfile("./data/embeddings/alice-%s.pck" % alice_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's embeddings")
@@ -282,9 +285,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             elapsed_alice_emb = -1
 
     else:
-
-        if GLOBAL_CONFIG["BenchMode"]:
-            start_alice_emb = time.time()
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Alice's data. This may take a while...")
@@ -372,6 +372,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     if ALIGN_CONFIG["Batchsize"] == "Auto":
         ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids))
+        if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
+            ALIGN_CONFIG["Batchsize"] = int(0.85 * ALIGN_CONFIG["Batchsize"])
 
     # Alignment
     if GLOBAL_CONFIG["BenchMode"]:
@@ -458,8 +460,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     if ALIGN_CONFIG["Wasserstein"]:
         if ALIGN_CONFIG["RegWS"] == "Auto":
-            smallest_dataset_size = min(len(alice_uids), len(eve_uids))
-            ALIGN_CONFIG["RegWS"] = min(0.1, max(0.02, smallest_dataset_size * 0.00001))
+            if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
+                ALIGN_CONFIG["RegWS"] = 0.1
+            else:
+                smallest_dataset_size = min(len(alice_uids), len(eve_uids))
+                ALIGN_CONFIG["RegWS"] = min(0.1, max(0.01, smallest_dataset_size * 0.00001))
             # est_overlap = min(len(alice_uids), len(eve_uids)) / max(len(alice_uids),len(eve_uids))
             # if est_overlap > 0.5:
             #     ALIGN_CONFIG["RegWS"] = 0.1
@@ -555,7 +560,7 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_5k.tsv",
+        "Data": "./data/fakename_20k.tsv",
         "Overlap": 0.8,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
@@ -595,25 +600,38 @@ if __name__ == "__main__":
     }
 
     EMB_CONFIG = {
-        "Algo": "NetMF",
+        "Algo": "Node2Vec",
         "AliceQuantile": 0.1,
-        "AliceDiscretize": True,
+        "AliceDiscretize": False,
         "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
         "EveQuantile": 0.1,
-        "EveDiscretize": True,
+        "EveDiscretize": False,
         "EveDim": 128,
         "EveContext": 10,
         "EveNegative": 1,
         "EveNormalize": True,
         "Workers": -1,
+        # For Node2Vec
+        "AliceWalkLen":100,
+        "AliceNWalks": 20,
+        "AliceP": 250, #0.5
+        "AliceQ": 300,    #2
+        "AliceEpochs": 5,
+        "AliceSeed": 42,
+        "EveWalkLen": 100,
+        "EveNWalks": 20,
+        "EveP": 250, #0.5
+        "EveQ": 300, #2
+        "EveEpochs": 5,
+        "EveSeed": 42,
     }
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
-        "RegInit": 1,
+        "RegInit": 0.25,# For BF 1
         "Batchsize": "Auto",
         "LR": 300.0,
         "NIterWS": 5,
