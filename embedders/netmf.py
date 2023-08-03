@@ -1,5 +1,6 @@
 # Implements the NetMF embeddings
 # Based on: https://github.com/GemsLab/CONE-Align/blob/master/embedding.py
+import random
 
 import numpy as np
 from scipy import sparse
@@ -87,7 +88,8 @@ class NetMFEmbedder():
         :return: The embeddings and the ordering
         """
         if ordering is None:
-            return self.emb_matrix, list(self.indexdict.keys())
+            ordering = list(self.indexdict.keys())
+            random.shuffle(ordering)
         embeddings = [self.emb_matrix[self.indexdict[k]] for k in ordering]
         embeddings = np.stack(embeddings, axis=0)
         return embeddings, ordering

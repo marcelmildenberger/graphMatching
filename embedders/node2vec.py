@@ -1,5 +1,6 @@
 import os
 import pickle
+import random
 
 import numpy as np
 import pecanpy
@@ -106,6 +107,7 @@ class N2VEmbedder():
         """
         if ordering is None:
             ordering = [k for k in self.model.wv.key_to_index]
+            random.shuffle(ordering)
         embeddings = [self.model.wv.get_vector(k) for k in ordering]
         embeddings = np.stack(embeddings, axis=0)
         return embeddings, ordering
