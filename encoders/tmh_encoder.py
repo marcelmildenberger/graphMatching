@@ -17,8 +17,10 @@ def jaccard_sim(D_chunk, start):
     for row in D_chunk:
         tmp = []
         for j, val in enumerate(row[0:start]):
-            # Compute the approximated jaccard similarity
-            val = max(0.0, 1.0 - 2.0 * float(val) / n_bits)
+            # Compute the approximated jaccard similarity and set negative values to zero.
+            # See Section 3.4.2 of the TabMinHash Paper for a justification of the approximation:
+            # https://doi.org/10.1016/j.jisa.2017.01.002
+            val = max(0.0, 1.0 - (2.0 * (float(val) / n_bits)))
             tmp.append((tuids[start], tuids[j], val))
         res.append(tmp)
         start += 1
@@ -207,9 +209,9 @@ class TMHEncoder():
         global n_bits
         n_bits = self.num_hash_bits
         if sim:
-            # There is no sklearn/scipy implementation for the approximated jaccard metric used in TabMinHash.
+            # There is no sklearn/scipy implementation for the approximate jaccard metric used in TabMinHash.
             # However, we still want to use sklearn's pairwise_distances_chunked because of performance and
-            # to avoid running out of memory. We can compute the cityblock/manhatten distance though, which, in case
+            # to avoid running out of memory. We can compute the cityblock/manhattan distance though, which, in case
             # of binary inputs, is equal to the number of different bits. The actual computation of approximate jaccard
             # is perfomed in the reduce function.
             # This is a somewhat hacky solution, but I currently can't think of a better one.
