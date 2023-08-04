@@ -65,8 +65,9 @@ import string
 import numpy as np
 import bitarray
 import hashlib
+from joblib import Parallel, delayed
 
-from tqdm import tqdm
+from tqdm import trange, tqdm
 
 # =============================================================================
 
@@ -110,12 +111,28 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
     return q_gram_jacc_sim
 
 
+def compute_metrics(i, data, cache, uids, metric, sim):
+    tmp = []
+    i_enc = cache[uids[i]]
+    for j, q_j in enumerate(data[i + 1:]):
+        j_enc = cache[uids[j + i + 1]]
+        if metric == "jaccard":
+            val = q_gram_jacc_sim(i_enc, j_enc)
+        else:
+            val = q_gram_dice_sim(i_enc, j_enc)
+
+        if not sim:
+            val = 1 - val
+
+        tmp.append(np.array([uids[i], uids[j + i + 1], val]))
+    return tmp
+
 class TSHEncoder():
     """A class that implements a column-based vector hashing approach for PPRL
        to encode strings into integer hash value sets.
     """
 
-    def __init__(self, num_hash_funct, num_hash_col, ngram_size, rand_mode='PNG', secret=None, verbose=True):
+    def __init__(self, num_hash_funct, num_hash_col, ngram_size, rand_mode='PNG', secret=None, verbose=True, workers=-1):
         """To initialise the class we need to set the number of hash functions,
            the number of hash columns (bit arrays) to generate, the maximum
            integer for the random numbers to be generated, and a counter for
@@ -144,6 +161,7 @@ class TSHEncoder():
         self.ngram_size = ngram_size
         self.salt = ''.join(random.choice(string.ascii_letters) for i in range(32)) if secret is None else secret
         self.verbose = verbose
+        self.workers = workers
 
     # ---------------------------------------------------------------------------
 
@@ -259,37 +277,43 @@ class TSHEncoder():
 
         return hash_set
 
-    def encode_and_compare(self, data, uids, metric, sim=True):
+    def encode_and_compare(self, data, uids, metric, sim=True, multicore = True):
         available_metrics = ["jaccard", "dice"]
-
-        pw_metrics = []
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-
+        uids = [float(u) for u in uids]
         data = ["".join(d).replace(" ", "").lower() for d in data]
         # Split each string in the data into a list of qgrams to process
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
 
+        parallel = Parallel(n_jobs=self.workers)
+        output_generator = parallel(delayed(self.encode) (i) for i in data)
         cache = {}
+        for i, enc in enumerate(output_generator):
+            cache[uids[i]] = enc
+        del output_generator
 
-        for i, q_i in tqdm(enumerate(data), desc="Encoding", total=len(data), disable=not self.verbose):
-            if str(uids[i]) in cache:
-                i_enc = cache[str(uids[i])]
-            else:
-                i_enc = self.encode(q_i)
-                cache[str(uids[i])] = i_enc
-            for j, q_j in enumerate(data[i + 1:]):
-                if str(uids[j + i + 1]) in cache:
-                    j_enc = cache[str(uids[j + i + 1])]
-                else:
-                    j_enc = self.encode(q_j)
-                    cache[str(uids[j + i + 1])] = j_enc
-                if metric == "jaccard":
-                    val = q_gram_jacc_sim(i_enc, j_enc)
-                else:
-                    val = q_gram_dice_sim(i_enc, j_enc)
+        if multicore:
+            pw_metrics = parallel(delayed(compute_metrics)(i, data, cache, uids, metric, sim) for i in trange(len(data)))
+            pw_metrics = [a for l in pw_metrics for a in l]
+            return np.stack(pw_metrics)
 
-                if not sim:
-                    val = 1 - val
-                pw_metrics.append(np.array([uids[i], uids[j + i + 1], val]))
+        else:
+            dim = ((len(uids)*len(uids))-len(uids))//2
+            pw_metrics = np.zeros((dim, 3), dtype=float)
+            ind = 0
+            for i, uid in tqdm(enumerate(uids), desc="Encoding", total=len(data), disable=not self.verbose):
+                i_enc = cache[uid]
+                for j, q_j in enumerate(data[i + 1:]):
+                    j_enc = cache[uids[j + i + 1]]
+                    if metric == "jaccard":
+                        val = q_gram_jacc_sim(i_enc, j_enc)
+                    else:
+                        val = q_gram_dice_sim(i_enc, j_enc)
 
-        return np.stack(pw_metrics).astype(float)
+                    if not sim:
+                        val = 1 - val
+
+                    pw_metrics[ind] = np.array([uid, uids[j + i + 1], val])
+                    ind += 1
+            return pw_metrics
+
