@@ -289,12 +289,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["BenchMode"]:
         start_alice_emb = time.time()
 
-    if os.path.isfile("./data/embeddings/alice-%s.pck" % alice_emb_hash):
+    if os.path.isfile("./data/embeddings/alice-%s.h5" % alice_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's embeddings")
 
-        with open("./data/embeddings/alice-%s.pck" % alice_emb_hash, "rb") as f:
-            alice_embedder = pickle.load(f)
+        alice_embeddings = hkl.load("./data/embeddings/alice-%s.h5" % alice_emb_hash)
+
+        with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "rb") as f:
+            alice_uids = pickle.load(f)
+
             # alice_embedder = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -332,20 +335,26 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Done embedding Alice's data.")
 
-        with open("./data/embeddings/alice-%s.pck" % alice_emb_hash, "wb") as f:
-            pickle.dump(alice_embedder, f, protocol=5)
+        # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
+        # similarity.
+        alice_embeddings, alice_uids = alice_embedder.get_vectors()
+
+        del alice_embedder
+
+        hkl.dump(alice_embeddings, "./data/embeddings/alice-%s.h5" % alice_emb_hash, mode='w')
+        with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "wb") as f:
+            pickle.dump(alice_uids, f, protocol=5)
             # joblib.dump(alice_embedder, f, protocol=5, compress=3)
 
-    # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
-    # similarity.
-    alice_embeddings, alice_uids = alice_embedder.get_vectors()
+    alice_indexdict = dict(zip(alice_uids, range(len(alice_uids))))
 
-    if os.path.isfile("./data/embeddings/eve-%s.pck" % eve_emb_hash):
+    if os.path.isfile("./data/embeddings/eve-%s.h5" % eve_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's embeddings")
 
-        with open("./data/embeddings/eve-%s.pck" % eve_emb_hash, "rb") as f:
-            eve_embedder = pickle.load(f)
+        eve_embeddings = hkl.load("./data/embeddings/eve-%s.h5" % eve_emb_hash)
+        with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "rb") as f:
+            eve_uids = pickle.load(f)
             # eve_embedder = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -383,10 +392,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Done embedding Eve's data.")
 
-        with open("./data/embeddings/eve-%s.pck" % eve_emb_hash, "wb") as f:
-            pickle.dump(eve_embedder, f, protocol=5)
+        eve_embeddings, eve_uids = eve_embedder.get_vectors()
 
-    eve_embeddings, eve_uids = eve_embedder.get_vectors()
+        del eve_embedder
+
+        hkl.dump(eve_embeddings, "./data/embeddings/eve-%s.h5" % eve_emb_hash, mode='w')
+        with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "wb") as f:
+            pickle.dump(eve_uids, f, protocol=5)
+
+    eve_indexdict = dict(zip(eve_uids, range(len(eve_uids))))
 
     if ALIGN_CONFIG["Batchsize"] == "Auto":
         ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids))
@@ -412,14 +426,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             save_tsv(degrees_eve, "./dev/degrees_eve.tsv")
             save_tsv(degrees_alice, "./dev/degrees_alice.tsv")
 
-        alice_sub = [alice_embedder.get_vector(k[0]) for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]]
-        eve_sub = [eve_embedder.get_vector(k[0]) for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]]
+        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]], :]
+        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]], :]
 
         del edgelist_eve, edgelist_alice, degrees_eve, degrees_alice
 
     elif ALIGN_CONFIG["Selection"] == "GroundTruth":
-        alice_sub = [alice_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
-        eve_sub = [eve_embedder.get_vector(k) for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]]
+        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]], :]
+        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]], :]
 
     elif ALIGN_CONFIG["Selection"] == "Centroids":
         sil = []
@@ -463,7 +477,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_sub = alice_embeddings
         eve_sub = eve_embeddings
 
-    del alice_enc, eve_enc, alice_embedder, eve_embedder
+    del alice_enc, eve_enc
 
     if ALIGN_CONFIG["Selection"] in ["Degree", "GroundTruth"]:
         alice_sub = np.stack(alice_sub, axis=0)
@@ -589,18 +603,18 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "TabMinHash",
+        "AliceAlgo": "TwoStepHash",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
-        "AliceBits": 1000, # BF: 30, TMH: 1000
+        "AliceBits": 30, # BF: 30, TMH: 1000
         "AliceN": 2,
-        "AliceMetric": "jaccard",
-        "EveAlgo": "TabMinHash",
+        "AliceMetric": "dice",
+        "EveAlgo": "TwoStepHash",
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 1000, # BF: 30, TMH: 1000
+        "EveBits": 30, # BF: 30, TMH: 1000
         "EveN": 2,
-        "EveMetric": "jaccard",
+        "EveMetric": "dice",
         # For TMH encoding
         "AliceTables": 8,
         "AliceKeyLen": 8,
@@ -649,7 +663,7 @@ if __name__ == "__main__":
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
-        "RegInit": 1,# For BF 1
+        "RegInit": 0.25,# For BF 1
         "Batchsize": "Auto",
         "LR": 300.0,
         "NIterWS": 5,
@@ -657,7 +671,7 @@ if __name__ == "__main__":
         "NEpochWS": 200,
         "LRDecay": 0.9,
         "Sqrt": True,
-        "EarlyStopping": 5,
+        "EarlyStopping": 20,
         "Selection": "None",
         "Wasserstein": True,
     }
