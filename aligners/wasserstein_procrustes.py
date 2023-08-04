@@ -24,10 +24,9 @@ def procrustes(X_src, Y_tgt):
 
 class WassersteinAligner:
 
-    def __init__(self, maxload, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, vocab_size, lr_decay,
+    def __init__(self, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, vocab_size, lr_decay,
                  apply_sqrt, early_stopping, seed=42, verbose=True, min_epsilon=0.001):
         #np.random.seed(seed)
-        self.maxload = maxload
         self.reg_init = reg_init
         self.reg_ws = reg_ws
         self.batchsize = batchsize
