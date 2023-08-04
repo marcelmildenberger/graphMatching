@@ -1,6 +1,6 @@
 import hashlib
 import os
-import platform
+import hickle as hkl
 import pickle
 import random
 import time
@@ -95,12 +95,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
                                                         GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
-    if os.path.isfile("./data/encoded/alice-%s.pck" % alice_enc_hash):
+    if os.path.isfile("./data/encoded/alice-%s.h5" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's encoded records")
 
-        with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "rb") as f:
-            alice_enc, n_alice = pickle.load(f)
+        alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash)
+        n_alice = int(alice_enc[0][2])
+        alice_enc = alice_enc[1:]
+        #with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "rb") as f:
+        #    alice_enc, n_alice = pickle.load(f)
             # alice_enc, n_alice = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -169,36 +172,45 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             elapsed_alice_enc = time.time() - start_alice_enc
 
         if GLOBAL_CONFIG["DevMode"]:
-            save_tsv(alice_enc, "dev/alice.edg")
+            np.savetxt("dev/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            #save_tsv(alice_enc, "dev/alice.edg")
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Alice's data")
 
-        with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "wb") as f:
-            pickle.dump((alice_enc, n_alice), f, protocol=5)
+        hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(float), alice_enc]),
+                 "./data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
+
+        #with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "wb") as f:
+        #    alice_enc = np.vstack(np.array([-1,-1,n_alice]).astype(float), alice_enc)
+        #    pickle.dump((alice_enc, n_alice), f, protocol=5)
             # joblib.dump((alice_enc, n_alice), f, protocol=5, compress=3)
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
     # Compute the threshold value for subsetting
-    tres = np.quantile([e[2] for e in alice_enc], EMB_CONFIG["AliceQuantile"])
+    tres = np.quantile(alice_enc[:,2], EMB_CONFIG["AliceQuantile"])
 
-    # Only keep edges if their similarity is greater than the threshold
-    alice_enc = [e for e in alice_enc if e[2] < tres]
+    # Only keep edges if their distance is below the threshold
+    alice_enc = alice_enc[(alice_enc[:, 2] < tres), :]
 
     # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
     if EMB_CONFIG["AliceDiscretize"]:
-        alice_enc = [(e[0], e[1], 1) for e in alice_enc]
+        alice_enc[:, 2] = 1.0
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Alice's data.")
 
-    if os.path.isfile("./data/encoded/eve-%s.pck" % eve_enc_hash):
+    if os.path.isfile("./data/encoded/eve-%s.h5" % eve_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's encoded records")
 
-        with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "rb") as f:
-            eve_enc, n_eve = pickle.load(f)
+        eve_enc = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash)
+        n_eve = int(eve_enc[0][2])
+        eve_enc = eve_enc[1:]
+
+        #with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "rb") as f:
+        #    eve_enc, n_eve = pickle.load(f)
             # eve_enc, n_eve = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -250,22 +262,26 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             elapsed_eve_enc = time.time() - start_eve_enc
 
         if GLOBAL_CONFIG["DevMode"]:
-            save_tsv(eve_enc, "dev/eve.edg")
+            np.savetxt("dev/alice.eve", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            #save_tsv(eve_enc, "dev/eve.edg")
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
 
-        with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "wb") as f:
-            pickle.dump((eve_enc, n_eve), f, protocol=5)
+        hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(float), eve_enc]),
+                 "./data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
+
+        #with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "wb") as f:
+        #    pickle.dump((eve_enc, n_eve), f, protocol=5)
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
 
-    tres = np.quantile([e[2] for e in eve_enc], EMB_CONFIG["EveQuantile"])
-    eve_enc = [e for e in eve_enc if e[2] < tres]
+    tres = np.quantile(eve_enc[:, 2], EMB_CONFIG["EveQuantile"])
+    eve_enc = eve_enc[(eve_enc[:, 2] < tres), :]
 
     if EMB_CONFIG["EveDiscretize"]:
-        eve_enc = [(e[0], e[1], 1) for e in eve_enc]
+        eve_enc[:, 2] = 1.0
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Eve's data.")
@@ -290,7 +306,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             print("Embedding Alice's data. This may take a while...")
 
         if EMB_CONFIG["Algo"] == "Node2Vec":
-            save_tsv(alice_enc, "data/edgelists/alice.edg")
+            #save_tsv(alice_enc, "data/edgelists/alice.edg")
+            np.savetxt("data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
                                          p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"],
@@ -343,7 +360,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             print("Embedding Eve's data. This may take a while...")
 
         if EMB_CONFIG["Algo"] == "Node2Vec":
-            save_tsv(eve_enc, "data/edgelists/eve.edg")
+            #save_tsv(eve_enc, "data/edgelists/eve.edg")
+            np.savetxt("data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
                                        p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
@@ -471,7 +489,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             # else:
             #     ALIGN_CONFIG["RegWS"] = max(0.02, (est_overlap/10)-0.01)
 
-        aligner = WassersteinAligner(ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
+        aligner = WassersteinAligner(ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
                                      ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"], ALIGN_CONFIG["NIterInit"],
                                      ALIGN_CONFIG["NIterWS"], ALIGN_CONFIG["NEpochWS"], len(alice_uids),
                                      ALIGN_CONFIG["LRDecay"], ALIGN_CONFIG["Sqrt"], ALIGN_CONFIG["EarlyStopping"],
@@ -560,7 +578,7 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_20k.tsv",
+        "Data": "./data/fakename_2k.tsv",
         "Overlap": 0.8,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
@@ -571,18 +589,18 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "TwoStepHash",
+        "AliceAlgo": "TabMinHash",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
-        "AliceBits": 30, # BF: 30, TMH: 1000
+        "AliceBits": 1000, # BF: 30, TMH: 1000
         "AliceN": 2,
-        "AliceMetric": "dice",
-        "EveAlgo": "TwoStepHash",
+        "AliceMetric": "jaccard",
+        "EveAlgo": "TabMinHash",
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 30, # BF: 30, TMH: 1000
+        "EveBits": 1000, # BF: 30, TMH: 1000
         "EveN": 2,
-        "EveMetric": "dice",
+        "EveMetric": "jaccard",
         # For TMH encoding
         "AliceTables": 8,
         "AliceKeyLen": 8,
@@ -600,16 +618,16 @@ if __name__ == "__main__":
     }
 
     EMB_CONFIG = {
-        "Algo": "Node2Vec",
+        "Algo": "NetMF",
         "AliceQuantile": 0.1,
         "AliceDiscretize": False,
-        "AliceDim": 128,
+        "AliceDim": 100,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
         "EveQuantile": 0.1,
         "EveDiscretize": False,
-        "EveDim": 128,
+        "EveDim": 100,
         "EveContext": 10,
         "EveNegative": 1,
         "EveNormalize": True,
@@ -631,15 +649,15 @@ if __name__ == "__main__":
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
-        "RegInit": 0.25,# For BF 1
+        "RegInit": 1,# For BF 1
         "Batchsize": "Auto",
         "LR": 300.0,
         "NIterWS": 5,
         "NIterInit": 50,  # 800
         "NEpochWS": 200,
         "LRDecay": 0.9,
-        "Sqrt": False,
-        "EarlyStopping": 20,
+        "Sqrt": True,
+        "EarlyStopping": 5,
         "Selection": "None",
         "Wasserstein": True,
     }

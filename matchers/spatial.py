@@ -25,6 +25,6 @@ class NNMatcher():
 
         mapping = {}
         for i, nearest in enumerate(indices):
-            mapping["S_"+smaller_uids[i]] = "L_"+larger_uids[nearest[0]]
+            mapping["S_"+str(smaller_uids[i])] = "L_"+str(larger_uids[nearest[0]])
 
         return mapping

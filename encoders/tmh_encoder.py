@@ -16,12 +16,12 @@ def jaccard_sim(D_chunk, start):
     res = []
     for row in D_chunk:
         tmp = []
-        for j, val in enumerate(row[0:start]):
+        for j, val in enumerate(row):
             # Compute the approximated jaccard similarity and set negative values to zero.
             # See Section 3.4.2 of the TabMinHash Paper for a justification of the approximation:
             # https://doi.org/10.1016/j.jisa.2017.01.002
             val = max(0.0, 1.0 - (2.0 * (float(val) / n_bits)))
-            tmp.append((tuids[start], tuids[j], val))
+            tmp.append(np.array([tuids[start], tuids[j], val]))
         res.append(tmp)
         start += 1
     return res
@@ -36,11 +36,10 @@ def jaccard_dist(D_chunk, start):
         for j, val in enumerate(row[0:start]):
             # Compute the approximated jaccard similarity
             val = max(0.0, 1.0 - 2.0 * float(val) / n_bits)
-            tmp.append((tuids[start], tuids[j], 1 - val))
+            tmp.append(np.array([tuids[start], tuids[j], 1 - val]))
         res.append(tmp)
         start += 1
     return res
-
 # =============================================================================
 class TMHEncoder():
     """A class that implements tabulation based min-hash encoding of string
@@ -219,9 +218,5 @@ class TMHEncoder():
             pw_metrics = pairwise_distances_chunked(enc, metric="cityblock", n_jobs=-1, reduce_func=jaccard_sim)
         else:
             pw_metrics = pairwise_distances_chunked(enc, metric="cityblock", n_jobs=-1, reduce_func=jaccard_dist)
-        pw_metrics_long = []
-        for i in pw_metrics:
-            pw_metrics_long += i
-        pw_metrics_long = [item for row in pw_metrics_long for item in row]
 
-        return pw_metrics_long
+        return np.stack([record for row in pw_metrics for item in row for record in item]).astype(float)

@@ -60,24 +60,53 @@ class NetMFEmbedder():
             embed = embed / norms
         return embed
 
-    def train(self, data: Union[str, List[Tuple[Union[int, float]]]]):
+    def train(self, data: Union[np.ndarray, Union[str, List[Tuple[Union[int, float]]]]]):
         """
         Computes the NetMF Embeddings for the graph specified in data.
-        :param data: The graph to encode. Either a string containing the path to an edgelist file, or an edgelist of the
-        form [(source, target, weight), (source, target, weight), ...]
+        :param data: The graph to encode. Either a string containing the path to an edgelist file, or an edgelist/
+         numpy array of the form [(source, target, weight), (source, target, weight), ...]
         :return: Nothing
         """
+        graph = None
         if type(data) == str:
             graph = nx.read_weighted_edgelist(data)
-        elif type(data) == list:
-            graph = nx.from_pandas_edgelist(pd.DataFrame(data, columns=["source", "target", "weight"]),
+            adj = nx.adjacency_matrix(graph).todense().astype(float)
+
+        elif type(data) in [list, np.ndarray]:
+            graph = nx.from_pandas_edgelist(
+                pd.DataFrame(data,
+                             columns=["source", "target", "weight"]).astype({'source': 'int32', 'target': 'int32'}),
                                                      edge_attr=True)
+            adj = nx.adjacency_matrix(graph).todense().astype(float)
+
+        elif False: #Currently disabled
+            # Efficiently creates an adjacency matrix without networkx.
+            # Since we have an undirected graph, the adjacency matrix is symmetric along the diagonal.
+            # Thus, two edges per node-pair must be present in our edgelist. This is done by duplicating the edges while
+            # changing the source for the target, e.g. swapping columns 0 and 1.
+            # This is most efficiently done via some fancy indexing,
+            # see https://stackoverflow.com/questions/20265229/rearrange-columns-of-numpy-2d-array
+            permutation = [1, 0, 2]
+            idx = np.empty_like(permutation)
+            idx[permutation] = np.arange(len(permutation))
+            data = np.vstack([data, data[:, idx]])
+
+            # https://stackoverflow.com/a/29148205
+            shape = tuple((data.max(axis=0)[:2] + 1).astype(int))
+            adj = sparse.coo_matrix((data[:, 2], (data[:, 0], data[:, 1])), shape=shape,
+                                    dtype=data.dtype).todense()
+            uid_inds = list(set(data[:, 0]))
+            uid_inds.sort()
+            del data
+
         else:
             raise Exception("Invalid data specified for NetMF computation")
-        adj = nx.adjacency_matrix(graph).todense().astype(float)
         self.emb_matrix = self.__netmf(adj)
         # A dictionary mapping nodes IDs to rows in the embedding matrix
-        self.indexdict = dict(zip(list(graph.nodes()), range(graph.number_of_nodes())))
+        if graph is not None:
+            self.indexdict = dict(zip(list(graph.nodes()), range(graph.number_of_nodes())))
+        else:
+            self.indexdict = {int(uid): ind for ind, uid in enumerate(uid_inds)}
 
     def get_vectors(self, ordering: List[str] = None) -> np.ndarray:
         """

@@ -1,6 +1,8 @@
 # Does not encode the data, but rather computes the similarities on the plaintext data
 
 from typing import Sequence, AnyStr, List, Tuple, Any, Union
+
+import numpy as np
 from tqdm import tqdm
 from .encoder import Encoder
 
@@ -70,6 +72,6 @@ class NonEncoder(Encoder):
                     val = q_gram_dice_sim(set(q_i), set(q_j))
                 if not sim:
                     val = 1 - val
-                pw_metrics.append((uids[i], uids[j + i + 1], val))
+                pw_metrics.append(np.array([uids[i], uids[j + i + 1], val]))
 
-        return pw_metrics
+        return np.stack(pw_metrics).astype(float)

@@ -62,7 +62,7 @@
 # Adapted in 2023 by Jochen Schäfer
 import random
 import string
-
+import numpy as np
 import bitarray
 import hashlib
 
@@ -290,6 +290,6 @@ class TSHEncoder():
 
                 if not sim:
                     val = 1 - val
-                pw_metrics.append((uids[i], uids[j + i + 1], val))
+                pw_metrics.append(np.array([uids[i], uids[j + i + 1], val]))
 
-        return pw_metrics
+        return np.stack(pw_metrics).astype(float)

@@ -16,7 +16,7 @@ def reduce_func(D_chunk, start):
     for row in D_chunk:
         tmp = []
         for j, val in enumerate(row[0:start]):
-            tmp.append((tuids[start], tuids[j], val))
+            tmp.append(np.array([tuids[start], tuids[j], val]))
         res.append(tmp)
         start += 1
     return res
@@ -28,7 +28,7 @@ def reduce_func_sim(D_chunk, start):
     for row in D_chunk:
         tmp = []
         for j, val in enumerate(row[0:start]):
-            tmp.append((tuids[start], tuids[j], 1 - val))
+            tmp.append(np.array([tuids[start], tuids[j], 1 - val]))
         res.append(tmp)
         start += 1
     return res
@@ -113,7 +113,7 @@ class BFEncoder(Encoder):
         return enc_data
 
     def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
-                           metric: str, sim: bool = True) -> List[Tuple[int, int, float]]:
+                           metric: str, sim: bool = True) -> np.ndarray:
         """
         Encodes the given data using bloom filter encoding (CLKHash), then computes and returns the pairwise
         similarities/distances of the bloom filters as a list of tuples.
@@ -140,9 +140,5 @@ class BFEncoder(Encoder):
             pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func_sim)
         else:
             pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func)
-        pw_metrics_long = []
-        for i in pw_metrics:
-            pw_metrics_long += i
-        pw_metrics_long = [item for row in pw_metrics_long for item in row]
 
-        return pw_metrics_long
+        return np.stack([record for row in pw_metrics for item in row for record in item]).astype(float)
