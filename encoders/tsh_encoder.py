@@ -82,11 +82,10 @@ def q_gram_dice_sim(q_gram_set1, q_gram_set2):
        returns a similarity value between 0 and 1.
     """
 
-    num_common_q_gram = len(q_gram_set1 & q_gram_set2)
+    num_common_q_gram = len(q_gram_set1.intersection(q_gram_set2))
 
     q_gram_dice_sim = (2.0 * num_common_q_gram) / \
                       (len(q_gram_set1) + len(q_gram_set2))
-    assert 0 <= q_gram_dice_sim and q_gram_dice_sim <= 1.0
 
     return q_gram_dice_sim
 
@@ -101,12 +100,10 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
        returns a value between 0 and 1.
     """
 
-    q_gram_intersection_set = q_gram_set1 & q_gram_set2
-    q_gram_union_set = q_gram_set1 | q_gram_set2
+    q_gram_intersection_set = q_gram_set1.intersection(q_gram_set2)
+    q_gram_union_set = q_gram_set1.union(q_gram_set2)
 
     q_gram_jacc_sim = float(len(q_gram_intersection_set) / len(q_gram_union_set))
-
-    assert 0 <= q_gram_jacc_sim and q_gram_jacc_sim <= 1
 
     return q_gram_jacc_sim
 
@@ -293,7 +290,8 @@ class TSHEncoder():
         del output_generator
 
         if multicore:
-            pw_metrics = parallel(delayed(compute_metrics)(i, data, cache, uids, metric, sim) for i in trange(len(data)))
+            pw_metrics = parallel(delayed(compute_metrics)(i, data, cache, uids, metric, sim) for i in trange(len(data),
+                                                                                                              disable= not self.verbose))
             pw_metrics = [a for l in pw_metrics for a in l]
             return np.stack(pw_metrics)
 
@@ -315,5 +313,6 @@ class TSHEncoder():
 
                     pw_metrics[ind] = np.array([uid, uids[j + i + 1], val])
                     ind += 1
+                #del cache[uid]
             return pw_metrics
 
