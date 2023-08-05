@@ -8,7 +8,8 @@ GLOBAL_CONFIG = {
     "BenchMode": True,  # Benchmark Mode
     "Verbose": False,  # Print Status Messages?
     "MatchingMetric": "euclidean",
-    "Matching": "NearestNeighbor"
+    "Matching": "NearestNeighbor",
+    "Workers": -1
 }
 
 ENC_CONFIG = {
@@ -54,7 +55,6 @@ EMB_CONFIG = {
     "EveContext": 10,
     "EveNegative": 1,
     "EveNormalize": True,
-    "Workers": -1,
     # For Node2Vec
     "AliceWalkLen": 100,
     "AliceNWalks": 20,
@@ -86,40 +86,32 @@ ALIGN_CONFIG = {
 }
 
 # Global params
-datasets = ["fakename_1k.tsv", "fakename_2k.tsv", "fakename_5k.tsv", "fakename_10k.tsv"]
-    #, "fakename_20k.tsv", "fakename_50k.tsv", "fakename_100k.tsv"]
+datasets = ["fakename_1k.tsv", "fakename_2k.tsv", "fakename_5k.tsv", "fakename_10k.tsv", "fakename_20k.tsv",
+            "fakename_50k.tsv", "fakename_100k.tsv"]
 overlap = [i/100 for i in range(10, 105, 5)]
+discretize = [False, True]
 
-for d in datasets:
-    GLOBAL_CONFIG["Data"] = "./data/" + d
-    if d == "fakename_1k.tsv":
-        EMB_CONFIG["AliceDim"] = 80
-        EMB_CONFIG["EveDim"] = 80
-        GLOBAL_CONFIG["Matching"] = "MinWeight"
-    elif d == "fakename_2k.tsv":
-        EMB_CONFIG["AliceDim"] = 100
-        EMB_CONFIG["EveDim"] = 100
-        GLOBAL_CONFIG["Matching"] = "MinWeight" # For 2SH: Nearest Neighbor
-    elif d == "fakename_20k.tsv":
-        EMB_CONFIG["AliceDim"] = 128
-        EMB_CONFIG["EveDim"] = 120
-        GLOBAL_CONFIG["Matching"] = "NearestNeighbor"
-    elif d == "fakename_50k.tsv":
-        EMB_CONFIG["AliceDim"] = 180
-        EMB_CONFIG["EveDim"] = 180
-        GLOBAL_CONFIG["Matching"] = "NearestNeighbor"
-    elif d == "fakename_100k.tsv":
-        EMB_CONFIG["AliceDim"] = 200
-        EMB_CONFIG["EveDim"] = 200
-        GLOBAL_CONFIG["Matching"] = "NearestNeighbor"
-    else:
-        EMB_CONFIG["AliceDim"] = 128
-        EMB_CONFIG["EveDim"] = 128
-        GLOBAL_CONFIG["Matching"] = "NearestNeighbor"
+for z in discretize:
+    for d in datasets:
+        GLOBAL_CONFIG["Data"] = "./data/" + d
+        if d == "fakename_1k.tsv":
+            EMB_CONFIG["AliceDim"] = 80
+            EMB_CONFIG["EveDim"] = 80
+            GLOBAL_CONFIG["Matching"] = "MinWeight"
+        elif d == "fakename_2k.tsv":
+            EMB_CONFIG["AliceDim"] = 100
+            EMB_CONFIG["EveDim"] = 100
+            GLOBAL_CONFIG["Matching"] = "MinWeight" # For 2SH: Nearest Neighbor
+        else:
+            EMB_CONFIG["AliceDim"] = 128
+            EMB_CONFIG["EveDim"] = 128
+            GLOBAL_CONFIG["Matching"] = "NearestNeighbor"
 
-    for o in overlap:
-        GLOBAL_CONFIG["Overlap"] = o
-        run(GLOBAL_CONFIG.copy(), ENC_CONFIG.copy(), EMB_CONFIG.copy(), ALIGN_CONFIG.copy())
+        for o in overlap:
+            GLOBAL_CONFIG["Overlap"] = o
+            EMB_CONFIG["AliceDiscretize"] = z
+            EMB_CONFIG["EveDiscretize"] = z
+            run(GLOBAL_CONFIG.copy(), ENC_CONFIG.copy(), EMB_CONFIG.copy(), ALIGN_CONFIG.copy())
 
 
 
