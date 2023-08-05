@@ -158,7 +158,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         elif ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
             alice_encoder = TSHEncoder(ENC_CONFIG["AliceNHashFunc"], ENC_CONFIG["AliceNHashCol"], ENC_CONFIG["AliceN"],
                                        ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
-                                       verbose=GLOBAL_CONFIG["Verbose"])
+                                       verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
@@ -316,7 +316,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                          p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"],
                                          dim_embeddings=EMB_CONFIG["AliceDim"],
                                          context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
-                                         seed=EMB_CONFIG["AliceSeed"], workers=EMB_CONFIG["Workers"])
+                                         seed=EMB_CONFIG["AliceSeed"], workers=GLOBAL_CONFIG["Workers"])
             alice_embedder.train("./data/edgelists/alice.edg")
 
         else:
@@ -375,7 +375,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
                                        p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
                                        context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
-                                       seed=EMB_CONFIG["EveSeed"], workers=EMB_CONFIG["Workers"])
+                                       seed=EMB_CONFIG["EveSeed"], workers=GLOBAL_CONFIG["Workers"])
             eve_embedder.train("./data/edgelists/eve.edg")
         else:
             eve_embedder = NetMFEmbedder(EMB_CONFIG["EveDim"], EMB_CONFIG["EveContext"],
@@ -402,11 +402,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     eve_indexdict = dict(zip(eve_uids, range(len(eve_uids))))
 
-    if ALIGN_CONFIG["Batchsize"] == "Auto":
-        ALIGN_CONFIG["Batchsize"] = min(len(alice_uids), len(eve_uids))
-        if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
-            ALIGN_CONFIG["Batchsize"] = int(0.85 * ALIGN_CONFIG["Batchsize"])
-
     # Alignment
     if GLOBAL_CONFIG["BenchMode"]:
         start_align_prep = time.time()
@@ -426,14 +421,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             save_tsv(degrees_eve, "./dev/degrees_eve.tsv")
             save_tsv(degrees_alice, "./dev/degrees_alice.tsv")
 
-        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in degrees_alice[:ALIGN_CONFIG["Batchsize"]]], :]
-        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in degrees_eve[:ALIGN_CONFIG["Batchsize"]]], :]
+        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in degrees_alice[:ALIGN_CONFIG["MaxLoad"]]], :]
+        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in degrees_eve[:ALIGN_CONFIG["MaxLoad"]]], :]
 
         del edgelist_eve, edgelist_alice, degrees_eve, degrees_alice
 
     elif ALIGN_CONFIG["Selection"] == "GroundTruth":
-        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]], :]
-        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["Batchsize"]]], :]
+        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
+        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
 
     elif ALIGN_CONFIG["Selection"] == "Centroids":
         sil = []
@@ -455,7 +450,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             print("Optimal K is %i with silhouette %f" % (optimal_k, tmp))
 
         ALIGN_CONFIG["Batchsize"] = optimal_k
-        ALIGN_CONFIG["VocabSize"] = optimal_k
 
         kmeans_alice = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(alice_embeddings)
         kmeans_eve = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(eve_embeddings)
@@ -464,18 +458,19 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         eve_sub = kmeans_eve.cluster_centers_
 
     elif ALIGN_CONFIG["Selection"] == "Random":
-        if len(eve_uids) < len(alice_uids):
-            alice_sub = alice_embeddings
-            eve_sub = eve_embeddings[
-                      np.random.choice(eve_embeddings.shape[0], alice_embeddings.shape[0], replace=False), :]
-        else:
-            eve_sub = eve_embeddings
-            alice_sub = alice_embeddings[
-                        np.random.choice(alice_embeddings.shape[0], eve_embeddings.shape[0], replace=False), :]
+        eve_sub = eve_embeddings[
+                  np.random.choice(eve_embeddings.shape[0], ALIGN_CONFIG["MaxLoad"], replace=False), :]
+        alice_sub = alice_embeddings[
+                    np.random.choice(alice_embeddings.shape[0], ALIGN_CONFIG["MaxLoad"], replace=False), :]
 
     else:
         alice_sub = alice_embeddings
         eve_sub = eve_embeddings
+
+    if ALIGN_CONFIG["Batchsize"] == "Auto":
+        ALIGN_CONFIG["Batchsize"] = min(len(alice_sub), len(eve_sub))
+        if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
+            ALIGN_CONFIG["Batchsize"] = int(0.85 * ALIGN_CONFIG["Batchsize"])
 
     del alice_enc, eve_enc
 
@@ -592,14 +587,15 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_2k.tsv",
+        "Data": "./data/fakename_5k.tsv",
         "Overlap": 0.8,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "euclidean",
-        "Matching": "NearestNeighbor"
+        "Matching": "NearestNeighbor",
+        "Workers": -1
     }
 
     ENC_CONFIG = {
@@ -645,7 +641,6 @@ if __name__ == "__main__":
         "EveContext": 10,
         "EveNegative": 1,
         "EveNormalize": True,
-        "Workers": -1,
         # For Node2Vec
         "AliceWalkLen":100,
         "AliceNWalks": 20,
@@ -658,7 +653,7 @@ if __name__ == "__main__":
         "EveP": 250, #0.5
         "EveQ": 300, #2
         "EveEpochs": 5,
-        "EveSeed": 42,
+        "EveSeed": 42
     }
 
     ALIGN_CONFIG = {
@@ -673,7 +668,8 @@ if __name__ == "__main__":
         "Sqrt": True,
         "EarlyStopping": 20,
         "Selection": "None",
-        "Wasserstein": True,
+        "MaxLoad": None,
+        "Wasserstein": True
     }
 
     mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)

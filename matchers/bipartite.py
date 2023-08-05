@@ -26,7 +26,7 @@ class MinWeightMatcher():
         # Add edges with weights
         for r in range(len(eve_uids)):
             for s in range(len(alice_uids)):
-                bip_graph.add_edge("L_" + eve_uids[r], "S_" + alice_uids[s], weight=pw_dists[r][s])
+                bip_graph.add_edge("L_" + str(eve_uids[r]), "S_" + str(alice_uids[s]), weight=pw_dists[r][s])
         return bipartite.matching.minimum_weight_full_matching(bip_graph, None, "weight")
 
 
