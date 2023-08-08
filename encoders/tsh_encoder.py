@@ -60,20 +60,20 @@
 # - hence there will not be any collision between the interger values
 
 # Adapted in 2023 by Jochen Schäfer
+import os
 import random
 import string
 import numpy as np
 import bitarray
 import hashlib
 from joblib import Parallel, delayed
+from sklearn.metrics import pairwise_distances_chunked
 
 from tqdm import trange, tqdm
 
 # =============================================================================
 
 HASH_FUNCT = hashlib.sha1
-
-
 def q_gram_dice_sim(q_gram_set1, q_gram_set2):
     """calculate the dice similarity between two given sets of q-grams.
        Dice sim(A,B)= 2 x number of common elements of A and B
@@ -108,11 +108,11 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
     return q_gram_jacc_sim
 
 
-def compute_metrics(i, data, cache, uids, metric, sim):
+def compute_metrics(inds, cache, uids, metric, sim):
     tmp = []
-    i_enc = cache[uids[i]]
-    for j, q_j in enumerate(data[i + 1:]):
-        j_enc = cache[uids[j + i + 1]]
+    for i, j in inds:
+        j_enc = cache[uids[j]]
+        i_enc = cache[uids[i]]
         if metric == "jaccard":
             val = q_gram_jacc_sim(i_enc, j_enc)
         else:
@@ -120,9 +120,15 @@ def compute_metrics(i, data, cache, uids, metric, sim):
 
         if not sim:
             val = 1 - val
+        tmp.append(np.array([uids[i], uids[j], val]))
+    return np.vstack(tmp)
 
-        tmp.append(np.array([uids[i], uids[j + i + 1], val]))
-    return tmp
+
+def split(list_a, chunk_size):
+
+  for i in range(0, len(list_a), chunk_size):
+    yield list_a[i:i + chunk_size]
+
 
 class TSHEncoder():
     """A class that implements a column-based vector hashing approach for PPRL
@@ -158,7 +164,7 @@ class TSHEncoder():
         self.ngram_size = ngram_size
         self.salt = ''.join(random.choice(string.ascii_letters) for i in range(32)) if secret is None else secret
         self.verbose = verbose
-        self.workers = workers
+        self.workers = os.cpu_count() if workers == -1 else workers
 
     # ---------------------------------------------------------------------------
 
@@ -274,7 +280,7 @@ class TSHEncoder():
 
         return hash_set
 
-    def encode_and_compare(self, data, uids, metric, sim=True, multicore = True):
+    def encode_and_compare(self, data, uids, metric, sim=True):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         uids = [float(u) for u in uids]
@@ -289,11 +295,18 @@ class TSHEncoder():
             cache[uids[i]] = enc
         del output_generator
 
-        if multicore:
-            pw_metrics = parallel(delayed(compute_metrics)(i, data, cache, uids, metric, sim) for i in trange(len(data),
-                                                                                                              disable= not self.verbose))
-            pw_metrics = [a for l in pw_metrics for a in l]
-            return np.stack(pw_metrics)
+        if self.workers > 1:
+            numex = len(uids)
+            inds = [(i, j) for i in range(numex) for j in range(i+1, numex)]
+            chunksize = len(inds) // self.workers
+            if chunksize < 1:
+                self.workers = 1
+            else:
+                inds = split(inds, chunksize)
+
+        if self.workers > 1:
+            pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
+            return np.vstack(pw_metrics)
 
         else:
             dim = ((len(uids)*len(uids))-len(uids))//2
@@ -313,6 +326,4 @@ class TSHEncoder():
 
                     pw_metrics[ind] = np.array([uid, uids[j + i + 1], val])
                     ind += 1
-                #del cache[uid]
             return pw_metrics
-
