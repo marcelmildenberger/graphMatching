@@ -109,7 +109,8 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
 
 
 def compute_metrics(inds, cache, uids, metric, sim):
-    tmp = []
+    tmp = np.zeros((len(inds),3), dtype=float)
+    pos = 0
     for i, j in inds:
         j_enc = cache[uids[j]]
         i_enc = cache[uids[i]]
@@ -120,15 +121,20 @@ def compute_metrics(inds, cache, uids, metric, sim):
 
         if not sim:
             val = 1 - val
-        tmp.append(np.array([uids[i], uids[j], val]))
-    return np.vstack(tmp)
+        tmp[pos] = np.array([uids[i], uids[j], val])
+        pos += 1
+    return tmp
 
 
-def split(list_a, chunk_size):
-
-  for i in range(0, len(list_a), chunk_size):
-    yield list_a[i:i + chunk_size]
-
+def make_inds(i_vals, numex):
+    tmp1 = []
+    for i in i_vals:
+        tmp2 = []
+        for j in range(i + 1, numex):
+            tmp2.append(np.array([i, j], dtype=int))
+        if len(tmp2)>0:
+            tmp1.append(np.vstack(tmp2))
+    return np.vstack(tmp1)
 
 class TSHEncoder():
     """A class that implements a column-based vector hashing approach for PPRL
@@ -289,22 +295,38 @@ class TSHEncoder():
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
 
         parallel = Parallel(n_jobs=self.workers)
+
         output_generator = parallel(delayed(self.encode) (i) for i in data)
         cache = {}
+        print("Caching")
         for i, enc in enumerate(output_generator):
             cache[uids[i]] = enc
         del output_generator
 
         if self.workers > 1:
             numex = len(uids)
-            inds = [(i, j) for i in range(numex) for j in range(i+1, numex)]
-            chunksize = len(inds) // self.workers
-            if chunksize < 1:
-                self.workers = 1
-            else:
-                inds = split(inds, chunksize)
+            print("Enumerating")
+            # dim = ((len(uids)*len(uids))-len(uids))//2
+            # inds = np.zeros((dim,2), dtype=int)
+            # pos = 0
+            # for i in range(numex):
+            #     for j in range(i+1, numex):
+            #         inds[pos] = np.array([i,j])
+            #         pos += 1
+
+            output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex),self.workers*2))
+            inds = np.vstack(output_generator)
+
+            #chunksize = len(inds) // self.workers
+            inds = np.array_split(inds, self.workers)
+            # if chunksize < 1:
+            #     self.workers = 1
+            # else:
+            #     print("Splitting")
+            #     inds = split(inds, chunksize)
 
         if self.workers > 1:
+            print("Calculating")
             pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
             return np.vstack(pw_metrics)
 
