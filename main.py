@@ -262,7 +262,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             elapsed_eve_enc = time.time() - start_eve_enc
 
         if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("dev/alice.eve", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("dev/eve.eve", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
             #save_tsv(eve_enc, "dev/eve.edg")
 
         if GLOBAL_CONFIG["Verbose"]:
@@ -316,7 +316,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                          p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"],
                                          dim_embeddings=EMB_CONFIG["AliceDim"],
                                          context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
-                                         seed=EMB_CONFIG["AliceSeed"], workers=GLOBAL_CONFIG["Workers"])
+                                         seed=EMB_CONFIG["AliceSeed"], workers=GLOBAL_CONFIG["Workers"],
+                                         verbose=GLOBAL_CONFIG["Verbose"])
             alice_embedder.train("./data/edgelists/alice.edg")
 
         else:
@@ -375,7 +376,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
                                        p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
                                        context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
-                                       seed=EMB_CONFIG["EveSeed"], workers=GLOBAL_CONFIG["Workers"])
+                                       seed=EMB_CONFIG["EveSeed"], workers=GLOBAL_CONFIG["Workers"],
+                                       verbose=GLOBAL_CONFIG["Verbose"])
             eve_embedder.train("./data/edgelists/eve.edg")
         else:
             eve_embedder = NetMFEmbedder(EMB_CONFIG["EveDim"], EMB_CONFIG["EveContext"],
@@ -468,9 +470,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         eve_sub = eve_embeddings
 
     if ALIGN_CONFIG["Batchsize"] == "Auto":
-        ALIGN_CONFIG["Batchsize"] = min(len(alice_sub), len(eve_sub))
+        bs = min(len(alice_sub), len(eve_sub))
         if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
-            ALIGN_CONFIG["Batchsize"] = int(0.85 * ALIGN_CONFIG["Batchsize"])
+            bs = int(0.85 * bs)
+        ALIGN_CONFIG["Batchsize"] = min(bs, 10000)
 
     del alice_enc, eve_enc
 
@@ -587,14 +590,14 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_5k.tsv",
-        "Overlap": 0.8,
+        "Data": "./data/fakename_1k.tsv",
+        "Overlap": 0.55,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "euclidean",
-        "Matching": "NearestNeighbor",
+        "Matching": "MinWeight",
         "Workers": -1
     }
 
@@ -628,16 +631,16 @@ if __name__ == "__main__":
     }
 
     EMB_CONFIG = {
-        "Algo": "NetMF",
+        "Algo": "Node2Vec",
         "AliceQuantile": 0.1,
         "AliceDiscretize": False,
-        "AliceDim": 100,
+        "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
         "EveQuantile": 0.1,
         "EveDiscretize": False,
-        "EveDim": 100,
+        "EveDim": 128,
         "EveContext": 10,
         "EveNegative": 1,
         "EveNormalize": True,
@@ -658,15 +661,15 @@ if __name__ == "__main__":
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
-        "RegInit": 0.25,# For BF 1
+        "RegInit": 1, # For BF 1
         "Batchsize": "Auto",
         "LR": 300.0,
         "NIterWS": 5,
-        "NIterInit": 50,  # 800
+        "NIterInit": 5,  # 800
         "NEpochWS": 200,
         "LRDecay": 0.9,
         "Sqrt": True,
-        "EarlyStopping": 20,
+        "EarlyStopping": 10,
         "Selection": "None",
         "MaxLoad": None,
         "Wasserstein": True
