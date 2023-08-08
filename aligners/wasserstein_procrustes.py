@@ -106,15 +106,23 @@ class WassersteinAligner:
 
         # If the two matrices contain a different number of records, reduce the size to the smaller of the two
         # by random subsampling.
-        if self.X.shape[0] < self.Y.shape[0]:
-            X_c = self.X
-            Y_c = self.Y[np.random.permutation(self.Y.shape[0])[:self.X.shape[0]], :]
-        elif self.X.shape[0] > self.Y.shape[0]:
-            X_c = self.X[np.random.permutation(self.X.shape[0])[:self.Y.shape[0]], :]
-            Y_c = self.Y
+
+        if min(self.X.shape[0], self.Y.shape[0]) > 10000:
+            X_c = self.X[np.random.permutation(self.X.shape[0])[:10000], :]
+            Y_c = self.Y[np.random.permutation(self.Y.shape[0])[:10000], :]
         else:
-            X_c = self.X
-            Y_c = self.Y
+            if self.X.shape[0] > self.Y.shape[0]: #<
+                X_c = self.X
+                #Y_c = self.Y[np.random.permutation(self.Y.shape[0])[:self.X.shape[0]], :]
+                Y_c = np.vstack([self.Y, self.Y[np.random.choice(self.Y.shape[0], self.X.shape[0] - self.Y.shape[0], replace=True), :]])
+            elif self.X.shape[0] < self.Y.shape[0]: #>
+                #X_c = self.X[np.random.permutation(self.X.shape[0])[:self.Y.shape[0]], :]
+                X_c = np.vstack([self.X, self.X[np.random.choice(self.X.shape[0], self.Y.shape[0] - self.X.shape[0], replace=True), :]])
+                Y_c = self.Y
+            else:
+                X_c = self.X
+                Y_c = self.Y
+
 
         n, d = X_c.shape
 
