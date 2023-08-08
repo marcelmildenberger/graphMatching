@@ -298,14 +298,12 @@ class TSHEncoder():
 
         output_generator = parallel(delayed(self.encode) (i) for i in data)
         cache = {}
-        print("Caching")
         for i, enc in enumerate(output_generator):
             cache[uids[i]] = enc
         del output_generator
 
         if self.workers > 1:
             numex = len(uids)
-            print("Enumerating")
             # dim = ((len(uids)*len(uids))-len(uids))//2
             # inds = np.zeros((dim,2), dtype=int)
             # pos = 0
@@ -326,7 +324,6 @@ class TSHEncoder():
             #     inds = split(inds, chunksize)
 
         if self.workers > 1:
-            print("Calculating")
             pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
             return np.vstack(pw_metrics)
 
