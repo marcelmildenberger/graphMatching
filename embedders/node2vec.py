@@ -30,7 +30,7 @@ class LossLogger(CallbackAny2Vec):
 class N2VEmbedder():
 
     def __init__(self, walk_length: int, n_walks: int, p: int, q: int, dim_embeddings: int, context_size: int, epochs,
-                 seed: int = 1337, workers: int = -1):
+                 seed: int = 1337, workers: int = -1, verbose=False):
         self.walk_length = walk_length
         self.n_walks = n_walks
         self.p = p
@@ -40,9 +40,11 @@ class N2VEmbedder():
         self.epochs = epochs
         self.seed = seed
         self.workers = workers if workers > 0 else os.cpu_count()
+        self.verbose = verbose
 
         self.model = None
 
+        # Development/Debug options
         self.dev = False
         self.load_stored = False
 
@@ -53,7 +55,7 @@ class N2VEmbedder():
         form [(source, target, weight), (source, target, weight), ...]
         :return: Nothing
         """
-        graph = pecanpy.pecanpy.SparseOTF(p=self.p, q=self.q, workers=self.workers, verbose=True, random_state=self.seed,
+        graph = pecanpy.pecanpy.SparseOTF(p=self.p, q=self.q, workers=self.workers, verbose=self.verbose, random_state=self.seed,
                                           extend=True)
 
         datname = "alice" if "alice" in data_dir else "eve"
@@ -72,10 +74,15 @@ class N2VEmbedder():
 
 
         # Run Word2Vec on the random walk to generate node2vec embeddings
-        loss_logger = LossLogger()
+
+        if self.verbose:
+            loss_logger = LossLogger()
+            cb = [loss_logger]
+        else:
+            cb = []
         self.model = Word2Vec(
             walks, vector_size=self.dim_embeddings, window=self.context_size / 2, min_count=0, sg=1,
-            workers=self.workers, epochs=self.epochs, compute_loss=True, callbacks=[loss_logger], seed=self.seed)
+            workers=self.workers, epochs=self.epochs, compute_loss=True, callbacks=cb, seed=self.seed)
         #alpha=0.05, min_alpha=0.01, seed=self.seed)
 
 
