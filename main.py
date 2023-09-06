@@ -471,9 +471,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     if ALIGN_CONFIG["Batchsize"] == "Auto":
         bs = min(len(alice_sub), len(eve_sub))
-        if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
-            bs = int(0.85 * bs)
+        bs = int(0.85 * bs)
         ALIGN_CONFIG["Batchsize"] = min(bs, 10000)
+
+    if ALIGN_CONFIG["Batchsize"] <= 1:
+        bs = int(ALIGN_CONFIG["Batchsize"]*min(len(alice_sub), len(eve_sub)))
+        ALIGN_CONFIG["Batchsize"] = min(bs, 10000)
+
 
     del alice_enc, eve_enc
 
@@ -493,8 +497,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
                 ALIGN_CONFIG["RegWS"] = 0.1
             else:
-                smallest_dataset_size = min(len(alice_uids), len(eve_uids))
-                ALIGN_CONFIG["RegWS"] = min(0.1, max(0.01, smallest_dataset_size * 0.00001))
+                ALIGN_CONFIG["RegWS"] = 0.05
+                #smallest_dataset_size = min(len(alice_uids), len(eve_uids))
+                #ALIGN_CONFIG["RegWS"] = min(0.1, max(0.02, smallest_dataset_size * 0.00001))
             # est_overlap = min(len(alice_uids), len(eve_uids)) / max(len(alice_uids),len(eve_uids))
             # if est_overlap > 0.5:
             #     ALIGN_CONFIG["RegWS"] = 0.1
@@ -590,14 +595,14 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_1k.tsv",
-        "Overlap": 0.55,
+        "Data": "./data/fakename_2k.tsv",
+        "Overlap": 0.9,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "euclidean",
-        "Matching": "MinWeight",
+        "Matching": "NearestNeighbor",
         "Workers": -1
     }
 
@@ -605,13 +610,13 @@ if __name__ == "__main__":
         "AliceAlgo": "TwoStepHash",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
-        "AliceBits": 30, # BF: 30, TMH: 1000
+        "AliceBits": 10, # BF: 30, TMH: 1000
         "AliceN": 2,
         "AliceMetric": "dice",
         "EveAlgo": "TwoStepHash",
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 30, # BF: 30, TMH: 1000
+        "EveBits": 10, # BF: 30, TMH: 1000
         "EveN": 2,
         "EveMetric": "dice",
         # For TMH encoding
@@ -661,15 +666,15 @@ if __name__ == "__main__":
 
     ALIGN_CONFIG = {
         "RegWS": "Auto",
-        "RegInit": 1, # For BF 1
+        "RegInit": 1, # For BF 0.25
         "Batchsize": "Auto",
         "LR": 300.0,
         "NIterWS": 5,
         "NIterInit": 5,  # 800
-        "NEpochWS": 200,
+        "NEpochWS": 20,
         "LRDecay": 0.9,
         "Sqrt": True,
-        "EarlyStopping": 10,
+        "EarlyStopping": 5,
         "Selection": "None",
         "MaxLoad": None,
         "Wasserstein": True
