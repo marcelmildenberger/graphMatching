@@ -137,10 +137,12 @@ class WassersteinAligner:
             q = ot.sinkhorn(np.ones(n), np.ones(n), G, self.reg_init, stopThr=1e-4)
             alpha = 2.0 / float(2.0 + it)
             P = alpha * q + (1.0 - alpha) * P
-        obj = np.linalg.norm(np.dot(P, K_X) - np.dot(K_Y, P))
+        R0 = procrustes(np.dot(P, X_c), Y_c).T
+        obj = self.objective(R0, n=min(self.Y.shape[0], self.X.shape[0]))
+        #obj = np.linalg.norm(np.dot(P, K_X) - np.dot(K_Y, P))
         if self.verbose:
-            print("Objective after convex initialization: " % obj)
-        return procrustes(np.dot(P, X_c), Y_c).T, obj
+            print("Objective after convex initialization: %f" % obj)
+        return R0, obj
 
     def align(self, src, tgt):
         self.X = src
