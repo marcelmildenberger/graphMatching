@@ -78,6 +78,7 @@ class WassersteinAligner:
                 U, s, VT = np.linalg.svd(R)
                 R = np.dot(U, VT)
             self.lr *= self.lr_decay
+            self.lr = max(self.lr, 1)
 
             obj = self.objective(R, n=min(self.Y.shape[0], self.X.shape[0]))
 

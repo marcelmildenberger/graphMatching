@@ -5,14 +5,9 @@ import pickle
 import random
 import time
 
-import networkx as nx
 import numpy as np
-import pandas as pd
 
 from hashlib import md5
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from tqdm import trange
 
 from aligners.closed_form_procrustes import ProcrustesAligner
 from aligners.wasserstein_procrustes import WassersteinAligner
@@ -102,9 +97,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash)
         n_alice = int(alice_enc[0][2])
         alice_enc = alice_enc[1:]
-        #with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "rb") as f:
-        #    alice_enc, n_alice = pickle.load(f)
-            # alice_enc, n_alice = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_enc = -1
@@ -181,10 +173,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(float), alice_enc]),
                  "./data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
 
-        #with open("./data/encoded/alice-%s.pck" % alice_enc_hash, "wb") as f:
-        #    alice_enc = np.vstack(np.array([-1,-1,n_alice]).astype(float), alice_enc)
-        #    pickle.dump((alice_enc, n_alice), f, protocol=5)
-            # joblib.dump((alice_enc, n_alice), f, protocol=5, compress=3)
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
@@ -208,10 +196,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         eve_enc = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash)
         n_eve = int(eve_enc[0][2])
         eve_enc = eve_enc[1:]
-
-        #with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "rb") as f:
-        #    eve_enc, n_eve = pickle.load(f)
-            # eve_enc, n_eve = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = -1
@@ -270,9 +254,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(float), eve_enc]),
                  "./data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
-
-        #with open("./data/encoded/eve-%s.pck" % eve_enc_hash, "wb") as f:
-        #    pickle.dump((eve_enc, n_eve), f, protocol=5)
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
@@ -408,56 +389,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["BenchMode"]:
         start_align_prep = time.time()
 
-    if ALIGN_CONFIG["Selection"] == "Degree":
-        # Read the edgelists as NetworkX graphs so we can determine the degrees of the nodes.
-        # edgelist_alice = nx.read_weighted_edgelist("data/edgelists/alice.edg")
-        # edgelist_eve = nx.read_weighted_edgelist("data/edgelists/eve.edg")
-        edgelist_alice = nx.from_pandas_edgelist(pd.DataFrame(alice_enc, columns=["source", "target", "weight"]),
-                                                 edge_attr=True)
-        edgelist_eve = nx.from_pandas_edgelist(pd.DataFrame(eve_enc, columns=["source", "target", "weight"]),
-                                               edge_attr=True)
-        degrees_alice = sorted(edgelist_alice.degree, key=lambda x: x[1], reverse=True)
-        degrees_eve = sorted(edgelist_eve.degree, key=lambda x: x[1], reverse=True)
-
-        if GLOBAL_CONFIG["DevMode"]:
-            save_tsv(degrees_eve, "./dev/degrees_eve.tsv")
-            save_tsv(degrees_alice, "./dev/degrees_alice.tsv")
-
-        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in degrees_alice[:ALIGN_CONFIG["MaxLoad"]]], :]
-        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in degrees_eve[:ALIGN_CONFIG["MaxLoad"]]], :]
-
-        del edgelist_eve, edgelist_alice, degrees_eve, degrees_alice
-
-    elif ALIGN_CONFIG["Selection"] == "GroundTruth":
+    if ALIGN_CONFIG["Selection"] == "GroundTruth":
         alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
         eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
-
-    elif ALIGN_CONFIG["Selection"] == "Centroids":
-        sil = []
-        kmax = 300
-        print("Determining optimal number of clusters K.")
-        for k in trange(2, kmax + 1, 1):
-            kmeans = KMeans(n_clusters=k, random_state=0, n_init=50).fit(alice_embeddings)
-            labels = kmeans.labels_
-            sil.append((k, silhouette_score(alice_embeddings, labels, metric='euclidean')))
-
-        tmp = 0
-        optimal_k = 0
-        for s in sil:
-            if s[1] > tmp:
-                tmp = s[1]
-                optimal_k = s[0]
-
-        if GLOBAL_CONFIG["Verbose"]:
-            print("Optimal K is %i with silhouette %f" % (optimal_k, tmp))
-
-        ALIGN_CONFIG["Batchsize"] = optimal_k
-
-        kmeans_alice = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(alice_embeddings)
-        kmeans_eve = KMeans(n_clusters=optimal_k, random_state=0, n_init=50).fit(eve_embeddings)
-
-        alice_sub = kmeans_alice.cluster_centers_
-        eve_sub = kmeans_eve.cluster_centers_
 
     elif ALIGN_CONFIG["Selection"] == "Random":
         eve_sub = eve_embeddings[
@@ -498,13 +432,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                 ALIGN_CONFIG["RegWS"] = 0.1
             else:
                 ALIGN_CONFIG["RegWS"] = 0.05
-                #smallest_dataset_size = min(len(alice_uids), len(eve_uids))
-                #ALIGN_CONFIG["RegWS"] = min(0.1, max(0.02, smallest_dataset_size * 0.00001))
-            # est_overlap = min(len(alice_uids), len(eve_uids)) / max(len(alice_uids),len(eve_uids))
-            # if est_overlap > 0.5:
-            #     ALIGN_CONFIG["RegWS"] = 0.1
-            # else:
-            #     ALIGN_CONFIG["RegWS"] = max(0.02, (est_overlap/10)-0.01)
 
         aligner = WassersteinAligner(ALIGN_CONFIG["RegInit"], ALIGN_CONFIG["RegWS"],
                                      ALIGN_CONFIG["Batchsize"], ALIGN_CONFIG["LR"], ALIGN_CONFIG["NIterInit"],
@@ -636,7 +563,7 @@ if __name__ == "__main__":
     }
 
     EMB_CONFIG = {
-        "Algo": "Node2Vec",
+        "Algo": "NetMF",
         "AliceQuantile": 0.1,
         "AliceDiscretize": False,
         "AliceDim": 128,
@@ -667,11 +594,11 @@ if __name__ == "__main__":
     ALIGN_CONFIG = {
         "RegWS": "Auto",
         "RegInit": 1, # For BF 0.25
-        "Batchsize": "Auto",
+        "Batchsize": "Auto", # For <=1 interpreted as fraction of smaller dataset
         "LR": 300.0,
         "NIterWS": 5,
         "NIterInit": 5,  # 800
-        "NEpochWS": 20,
+        "NEpochWS": 100,
         "LRDecay": 0.9,
         "Sqrt": True,
         "EarlyStopping": 5,
