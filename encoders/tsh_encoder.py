@@ -114,10 +114,10 @@ def compute_metrics(inds, cache, uids, metric, sim):
     prev_i = prev_j = None
     for i, j in inds:
         if i != prev_i:
-            j_enc = cache[uids[j]]
+            i_enc = cache[uids[i]]
             prev_i = i
         if j != prev_j:
-            i_enc = cache[uids[i]]
+            j_enc = cache[uids[j]]
             prev_j = j
         if metric == "jaccard":
             val = q_gram_jacc_sim(i_enc, j_enc)
