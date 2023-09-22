@@ -13,3 +13,5 @@ aesara~=2.9.1
 sparse_dot_mkl~=0.8.3
 hickle~=5.0.2
 bitarray~=2.7.3
+matplotlib~=3.2.2
+joblib~=1.2.0

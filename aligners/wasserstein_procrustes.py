@@ -25,7 +25,7 @@ def procrustes(X_src, Y_tgt):
 class WassersteinAligner:
 
     def __init__(self, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, vocab_size, lr_decay,
-                 apply_sqrt, early_stopping, seed=42, verbose=True, min_epsilon=0.001):
+                 apply_sqrt, early_stopping, seed=42, verbose=True, min_epsilon=0.0005):
         #np.random.seed(seed)
         self.reg_init = reg_init
         self.reg_ws = reg_ws
@@ -90,13 +90,13 @@ class WassersteinAligner:
 
             if self.verbose or self.early_stopping > 0:
                 if self.verbose:
-                    print("epoch: %d  obj: %.3f" % (epoch, obj))
+                    print("epoch: %d  obj: %.3f  best: %.3f" % (epoch, obj, best_obj))
 
-                if (prev_obj - obj) < self.min_epsilon:
+                if (prev_obj - best_obj) < self.min_epsilon:
                     no_improvement += 1
                 else:
                     no_improvement = 0
-                prev_obj = obj
+                prev_obj = best_obj
 
         return best_R
 

@@ -18,21 +18,24 @@ class Simulator:
         self.selected_alice = None
         self.selected_eve = None
         self.selected_overlap = None
+        self.overlap_count = None
 
     def calc_sizes(self, drop_from, overlap):
         if drop_from == "Alice":
-            self.selected_alice = random.sample(range(self.n), int(overlap * self.n))
+            self.overlap_count = int(overlap * self.n)
+            self.selected_alice = random.sample(range(self.n), self.overlap_count)
             self.selected_eve = range(self.n)
         elif drop_from == "Eve":
+            self.overlap_count = int(overlap * self.n)
             self.selected_alice = range(self.n)
-            self.selected_eve = random.sample(range(self.n), int(overlap * self.n))
+            self.selected_eve = random.sample(range(self.n), self.overlap_count)
         elif drop_from == "Both":
             # See main.py Line 111 for explanation
-            overlap_count = int(-(overlap * self.n / (overlap - 2)))
+            self.overlap_count = int(-(overlap * self.n / (overlap - 2)))
             available = list(range(self.n))
-            self.selected_overlap = random.sample(available, overlap_count)
+            self.selected_overlap = random.sample(available, self.overlap_count)
             available = [i for i in available if i not in self.selected_overlap]
-            self.selected_alice = random.sample(available, int((self.n - overlap_count) / 2))
+            self.selected_alice = random.sample(available, int((self.n - self.overlap_count) / 2))
             available = [i for i in available if i not in self.selected_alice]
             self.selected_alice += self.selected_overlap
             self.selected_eve = self.selected_overlap + available
