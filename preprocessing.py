@@ -24,12 +24,21 @@ data["uid"] = ind
 random.shuffle(ind)
 #ind = ind[:int(OVERLAP*len(ind))]
 data = data.iloc[ind]
-data = data.head(50000)
 
-#data["uid"] = data["uid"] + 100
+if False:
+    data_red = data.head(5000).copy()
+    ind = list(range(data_red.shape[0]))
+    data_red["uid"] = ind
 
-# Save data
-data.to_csv("./data/fakename_50k.tsv", index=False, sep="\t")
+    data_disj = data.tail(5000).copy()
+    ind = list(range(data_disj.shape[0]))
+    data_disj["uid"] = ind
+    # Save data
+    data_red.to_csv("./data/fakename_5k.tsv", index=False, sep="\t")
+    data_disj.to_csv("./data/disjoint_5k.tsv", index=False, sep="\t")
+else:
+    data = data.head(5000)
+    data.to_csv("./data/fakename_5k.tsv", index=False, sep="\t")
 #eve.to_csv("./data/eve.tsv", index=False, sep = "\t")
 
 print("Done")
