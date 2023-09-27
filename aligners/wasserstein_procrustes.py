@@ -52,7 +52,7 @@ class WassersteinAligner:
                 print("Will use GPU for acceleration.")
 
     def objective(self, R, n=1000):
-        Xn = self.X[torch.randperm(len(self.Y))[:n]]
+        Xn = self.X[torch.randperm(len(self.X)[:n]]
         Yn = self.Y[torch.randperm(len(self.Y))[:n]]
         C = -torch.matmul(torch.matmul(Xn, R), Yn.T)
         if self.use_gpu:
