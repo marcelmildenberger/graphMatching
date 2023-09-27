@@ -20,7 +20,7 @@ class NNMatcher():
         smaller_uids = alice_uids if len(alice_uids) < len(eve_uids) else eve_uids
         larger_uids = alice_uids if len(alice_uids) >= len(eve_uids) else eve_uids
 
-        nn = NearestNeighbors(n_neighbors=1, algorithm='ball_tree', metric=self.metric, n_jobs=self.workers).fit(larger_data)
+        nn = NearestNeighbors(n_neighbors=1, metric=self.metric, n_jobs=self.workers).fit(larger_data)
         distances, indices = nn.kneighbors(smaller_data)
 
         mapping = {}
