@@ -1,8 +1,7 @@
 import numpy as np
 from collections import deque
-import networkx as nx
+from scipy.optimize import linear_sum_assignment
 from sklearn.metrics.pairwise import pairwise_distances
-from networkx.algorithms import bipartite
 
 class MinWeightMatcher():
 
@@ -17,17 +16,23 @@ class MinWeightMatcher():
         self.workers = workers
 
     def match(self, alice_data, alice_uids, eve_data, eve_uids):
-        pw_dists = pairwise_distances(eve_data, alice_data, metric=self.metric, n_jobs=self.workers)
-        eve_nodes = ["L_" + str(k) for k in eve_uids]
-        alice_nodes = ["S_" + str(k) for k in alice_uids]
-        bip_graph = nx.Graph()  # Add nodes with the node attribute "bipartite"
-        bip_graph.add_nodes_from(eve_nodes, bipartite=0)
-        bip_graph.add_nodes_from(alice_nodes, bipartite=1)
-        # Add edges with weights
-        for r in range(len(eve_uids)):
-            for s in range(len(alice_uids)):
-                bip_graph.add_edge("L_" + str(eve_uids[r]), "S_" + str(alice_uids[s]), weight=pw_dists[r][s])
-        return bipartite.matching.minimum_weight_full_matching(bip_graph, None, "weight")
+
+        smaller_data = alice_data if len(alice_uids) < len(eve_uids) else eve_data
+        larger_data = alice_data if len(alice_uids) >= len(eve_uids) else eve_data
+
+        smaller_uids = alice_uids if len(alice_uids) < len(eve_uids) else eve_uids
+        larger_uids = alice_uids if len(alice_uids) >= len(eve_uids) else eve_uids
+
+        pw_sims = pairwise_distances(larger_data, smaller_data, metric=self.metric, n_jobs=self.workers)
+
+        row_ind, col_ind = linear_sum_assignment(pw_sims)
+
+        mapping = {}
+        for larger, smaller in zip(row_ind, col_ind):
+            mapping["S_"+str(smaller_uids[smaller])] = "L_"+str(larger_uids[larger])
+
+        return mapping
+
 
 
 class GaleShapleyMatcher():
