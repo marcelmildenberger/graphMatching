@@ -8,7 +8,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import time, math, ot
-import numpy as np
 import torch
 from tqdm import trange
 
