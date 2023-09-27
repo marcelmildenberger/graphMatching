@@ -52,11 +52,12 @@ class WassersteinAligner:
                 print("Will use GPU for acceleration.")
 
     def objective(self, R, n=1000):
-        Xn, Yn = self.X[:n], self.Y[:n]
+        Xn = self.X[torch.randperm(len(self.Y))[:n]]
+        Yn = self.Y[torch.randperm(len(self.Y))[:n]]
         C = -torch.matmul(torch.matmul(Xn, R), Yn.T)
         if self.use_gpu:
             P = ot.sinkhorn(torch.ones(n, device='cuda'), torch.ones(n, device='cuda'), C, 0.9, stopThr=1e-3,
-                            numItermax=1000)
+                            numItermax=1000, method = "sinkhorn_log")
         else:
             P = ot.sinkhorn(torch.ones(n), torch.ones(n), C, 0.9, stopThr=1e-3, numItermax=1000)
         return 1000 * torch.linalg.norm(torch.matmul(Xn, R) - torch.matmul(P, Yn)) / n
@@ -83,7 +84,7 @@ class WassersteinAligner:
                 if self.use_gpu:
                     P = ot.sinkhorn(torch.ones(self.batchsize, device='cuda'),
                                     torch.ones(self.batchsize, device='cuda'), C, self.reg_ws, stopThr=1e-3,
-                                    numItermax=1000)
+                                    numItermax=1000, method = "sinkhorn_log")
                 else:
                     P = ot.sinkhorn(torch.ones(self.batchsize), torch.ones(self.batchsize), C, self.reg_ws,
                                     stopThr=1e-3,
@@ -97,8 +98,11 @@ class WassersteinAligner:
             self.lr *= self.lr_decay
             self.lr = max(self.lr, 1)
 
-            print("Objective")
-            obj = self.objective(R, n=min(self.Y.shape[0], self.X.shape[0]))
+            obj = 0
+            for i in range(5):
+                obj += self.objective(R, n=min(self.Y.shape[0], self.X.shape[0]))
+
+            obj /= 5
 
             if first_obj == -1:
                 first_obj = obj
@@ -155,7 +159,7 @@ class WassersteinAligner:
             G = torch.matmul(P, K2_X) + torch.matmul(K2_Y, P) - 2 * torch.matmul(K_Y, torch.matmul(P, K_X))
             if self.use_gpu:
                 q = ot.sinkhorn(torch.ones(n, device='cuda'), torch.ones(n, device='cuda'), G, self.reg_init,
-                                stopThr=1e-4)
+                                stopThr=1e-4, method = "sinkhorn_log")
             else:
                 q = ot.sinkhorn(torch.ones(n), torch.ones(n), G, self.reg_init, stopThr=1e-4)
             alpha = 2.0 / float(2.0 + it)
@@ -188,5 +192,5 @@ class WassersteinAligner:
         R = self.solve_procrustes(R0)
         if self.verbose:
             print("Done [%03d sec]" % math.floor(time.time() - t0))
-
+        torch.cuda.empty_cache()
         return R.numpy(force=True)
