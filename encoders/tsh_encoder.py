@@ -139,7 +139,7 @@ def make_inds(i_vals, numex):
             tmp2.append(np.array([i, j], dtype=int))
         if len(tmp2)>0:
             tmp1.append(np.vstack(tmp2))
-    return np.vstack(tmp1)
+    return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0,2), dtype=int)
 
 class TSHEncoder():
     """A class that implements a column-based vector hashing approach for PPRL
