@@ -17,7 +17,8 @@ from encoders.bf_encoder import BFEncoder
 from encoders.tmh_encoder import TMHEncoder
 from encoders.tsh_encoder import TSHEncoder
 from encoders.non_encoder import NonEncoder
-from matchers.bipartite import MinWeightMatcher, GaleShapleyMatcher, SymmetricMatcher
+from matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
+
 from matchers.spatial import NNMatcher
 from utils import *
 
@@ -94,7 +95,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's encoded records")
 
-        alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash)
+        alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
         n_alice = int(alice_enc[0][2])
         alice_enc = alice_enc[1:]
 
@@ -165,14 +166,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         if GLOBAL_CONFIG["DevMode"]:
             np.savetxt("dev/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
-            #save_tsv(alice_enc, "dev/alice.edg")
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Alice's data")
 
-        hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(float), alice_enc]),
+        hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(np.float32), alice_enc]),
                  "./data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
-
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
@@ -193,7 +192,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's encoded records")
 
-        eve_enc = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash)
+        eve_enc = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
         n_eve = int(eve_enc[0][2])
         eve_enc = eve_enc[1:]
 
@@ -252,7 +251,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
 
-        hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(float), eve_enc]),
+        hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(np.float32), eve_enc]),
                  "./data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
 
     if GLOBAL_CONFIG["Verbose"]:
@@ -274,12 +273,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's embeddings")
 
-        alice_embeddings = hkl.load("./data/embeddings/alice-%s.h5" % alice_emb_hash)
+        alice_embeddings = hkl.load("./data/embeddings/alice-%s.h5" % alice_emb_hash).astype(np.float32)
 
         with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "rb") as f:
             alice_uids = pickle.load(f)
-
-            # alice_embedder = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_emb = -1
@@ -290,7 +287,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             print("Embedding Alice's data. This may take a while...")
 
         if EMB_CONFIG["Algo"] == "Node2Vec":
-            #save_tsv(alice_enc, "data/edgelists/alice.edg")
             np.savetxt("data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
@@ -326,7 +322,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         hkl.dump(alice_embeddings, "./data/embeddings/alice-%s.h5" % alice_emb_hash, mode='w')
         with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "wb") as f:
             pickle.dump(alice_uids, f, protocol=5)
-            # joblib.dump(alice_embedder, f, protocol=5, compress=3)
 
     alice_indexdict = dict(zip(alice_uids, range(len(alice_uids))))
 
@@ -334,10 +329,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's embeddings")
 
-        eve_embeddings = hkl.load("./data/embeddings/eve-%s.h5" % eve_emb_hash)
+        eve_embeddings = hkl.load("./data/embeddings/eve-%s.h5" % eve_emb_hash).astype(np.float32)
         with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "rb") as f:
             eve_uids = pickle.load(f)
-            # eve_embedder = joblib.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_emb = -1
@@ -351,7 +345,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             print("Embedding Eve's data. This may take a while...")
 
         if EMB_CONFIG["Algo"] == "Node2Vec":
-            #save_tsv(eve_enc, "data/edgelists/eve.edg")
             np.savetxt("data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
@@ -406,11 +399,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if ALIGN_CONFIG["Batchsize"] == "Auto":
         bs = min(len(alice_sub), len(eve_sub))
         bs = int(0.85 * bs)
-        ALIGN_CONFIG["Batchsize"] = min(bs, 10000)
+        ALIGN_CONFIG["Batchsize"] = bs
 
-    if ALIGN_CONFIG["Batchsize"] <= 1:
+    if ALIGN_CONFIG["Batchsize"] <= 2:
         bs = int(ALIGN_CONFIG["Batchsize"]*min(len(alice_sub), len(eve_sub)))
-        ALIGN_CONFIG["Batchsize"] = min(bs, 10000)
+        bs = min(bs, 30000)
+        ALIGN_CONFIG["Batchsize"] = bs
 
 
     del alice_enc, eve_enc
@@ -522,28 +516,28 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_2k.tsv",
-        "Overlap": 0.9,
+        "Data": "./data/fakename_20k.tsv",
+        "Overlap": 0.25,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
-        "MatchingMetric": "euclidean",
-        "Matching": "NearestNeighbor",
+        "MatchingMetric": "cosine",
+        "Matching": "MinWeight",
         "Workers": -1
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "TwoStepHash",
+        "AliceAlgo": "BloomFilter",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
-        "AliceBits": 10, # BF: 30, TMH: 1000
+        "AliceBits": 40, # BF: 30, TMH: 1000
         "AliceN": 2,
         "AliceMetric": "dice",
-        "EveAlgo": "TwoStepHash",
+        "EveAlgo": "BloomFilter",
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 10, # BF: 30, TMH: 1000
+        "EveBits": 40, # BF: 30, TMH: 1000
         "EveN": 2,
         "EveMetric": "dice",
         # For TMH encoding
@@ -563,7 +557,7 @@ if __name__ == "__main__":
     }
 
     EMB_CONFIG = {
-        "Algo": "NetMF",
+        "Algo": "Node2Vec",
         "AliceQuantile": 0.1,
         "AliceDiscretize": False,
         "AliceDim": 128,
@@ -580,7 +574,7 @@ if __name__ == "__main__":
         "AliceWalkLen":100,
         "AliceNWalks": 20,
         "AliceP": 250, #0.5
-        "AliceQ": 300,    #2
+        "AliceQ": 300,    #2z
         "AliceEpochs": 5,
         "AliceSeed": 42,
         "EveWalkLen": 100,
@@ -592,19 +586,18 @@ if __name__ == "__main__":
     }
 
     ALIGN_CONFIG = {
-        "RegWS": "Auto",
-        "RegInit": 1, # For BF 0.25
-        "Batchsize": "Auto", # For <=1 interpreted as fraction of smaller dataset
-        "LR": 300.0,
-        "NIterWS": 5,
-        "NIterInit": 5,  # 800
+        "RegWS": GLOBAL_CONFIG["Overlap"]/2, #0005
+        "RegInit":1, # For BF 0.25
+        "Batchsize": 1, # 1 = 100%
+        "LR": 200.0,
+        "NIterWS": 100,
+        "NIterInit": 5  ,  # 800
         "NEpochWS": 100,
-        "LRDecay": 0.9,
+        "LRDecay": 0.999,
         "Sqrt": True,
-        "EarlyStopping": 5,
+        "EarlyStopping": 10,
         "Selection": "None",
         "MaxLoad": None,
         "Wasserstein": True
     }
-
     mp = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
