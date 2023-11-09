@@ -1,5 +1,5 @@
 # Encodes a given using bloom filters for PPRL
-
+import gc
 from typing import Sequence, AnyStr, List, Tuple, Any
 from .encoder import Encoder
 import numpy as np
@@ -9,30 +9,20 @@ from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
 from sklearn.metrics import pairwise_distances_chunked
 
+def numpy_pairwise_combinations(x):
+    # https://carlostgameiro.medium.com/fast-pairwise-combinations-in-numpy-c29b977c33e2
+    tmp = np.triu_indices(len(x), k=1)
+    gc.collect()
+    idx = np.stack(tmp, axis=-1)
+    return x[idx]
 
-def reduce_func(D_chunk, start):
-    global tuids
-    res = []
-    for row in D_chunk:
-        tmp = []
-        for j, val in enumerate(row[0:start]):
-            tmp.append(np.array([tuids[start], tuids[j], val]))
-        res.append(tmp)
-        start += 1
-    return res
-
-
-def reduce_func_sim(D_chunk, start):
-    global tuids
-    res = []
-    for row in D_chunk:
-        tmp = []
-        for j, val in enumerate(row[0:start]):
-            tmp.append(np.array([tuids[start], tuids[j], 1 - val]))
-        res.append(tmp)
-        start += 1
-    return res
-
+def test(uids):
+    dim = ((len(uids)*len(uids))-len(uids))//2
+    tmp = np.triu_indices(len(uids), k=1)
+    idx = np.zeros((dim, 2), dtype=np.float32)
+    idx[:,0] = uids[tmp[0]]
+    idx[:,1] = uids[tmp[1]]
+    return idx
 
 class BFEncoder(Encoder):
 
@@ -130,15 +120,45 @@ class BFEncoder(Encoder):
                              "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
                              "sqeuclidean", "yule"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        # print("DEB: Encoding")
+
+        #print("DEB: Encoding")
         enc = self.encode(data)
         # Calculates pairwise distances between the provided data points
-        # print("DEB: PDist")
-        global tuids
-        tuids = uids
         if sim:
-            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func_sim)
+            vals = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1)
         else:
-            pw_metrics = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1, reduce_func=reduce_func)
+            vals = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1)
 
-        return np.stack([record for row in pw_metrics for item in row for record in item]).astype(float)
+        vals = np.vstack(list(vals), dtype=np.float32)
+        del enc, data
+        gc.collect()
+        #print("Subset")
+        # Since we're comparing the values to themselves, we only need the values above the main diagonal
+        # Otherwise we would have two edges per node-pair in the graph
+        # lower_tri = np.tri(vals.shape[0], k=0, dtype=bool)
+        vals = vals[np.invert(np.tri(vals.shape[0], k=0, dtype=bool))]
+        gc.collect()
+        #print("Sim")
+        if sim:
+            vals = 1-vals
+        gc.collect()
+
+        #print("Uids")
+        # Compute the unique combinations of uids...
+        uids = test(np.array(uids, dtype=int))
+        gc.collect()
+
+        #print("Re")
+        #dim = ((len(uids)*len(uids))-len(uids))//2
+        re = np.zeros((len(uids), 3), dtype=np.float32)
+
+        #print("Add")
+        re[:,2] = vals
+        del vals
+        gc.collect()
+
+        #print("Add UIDs")
+        re[:,0:2] = uids
+        gc.collect()
+        #...and add the metrics
+        return re
