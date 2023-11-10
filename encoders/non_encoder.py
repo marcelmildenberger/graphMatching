@@ -1,10 +1,15 @@
-# Does not encode the data, but rather computes the similarities on the plaintext data
-
-from typing import Sequence, AnyStr, List, Tuple, Any, Union
-
 import numpy as np
-from tqdm import tqdm
-from .encoder import Encoder
+import os
+from joblib import Parallel, delayed
+def make_inds(i_vals, numex):
+    tmp1 = []
+    for i in i_vals:
+        tmp2 = []
+        for j in range(i + 1, numex):
+            tmp2.append(np.array([i, j], dtype=int))
+        if len(tmp2)>0:
+            tmp1.append(np.vstack(tmp2))
+    return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0,2), dtype=int)
 
 
 def q_gram_dice_sim(q_gram_set1, q_gram_set2):
@@ -24,7 +29,6 @@ def q_gram_dice_sim(q_gram_set1, q_gram_set2):
     return q_gram_dice_sim
 
 
-# -----------------------------------------------------------------------------
 
 def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
     """calculate the jaccard similarity between two given sets of q-grams.
@@ -44,34 +48,58 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
     return q_gram_jacc_sim
 
 
+def compute_metrics(inds, cache, uids, metric, sim):
+    tmp = np.zeros((len(inds),3), dtype=float)
+    pos = 0
+    prev_i = prev_j = None
+    for i, j in inds:
+        if i != prev_i:
+            i_enc = cache[uids[i]]
+            prev_i = i
+        if j != prev_j:
+            j_enc = cache[uids[j]]
+            prev_j = j
+        if metric == "jaccard":
+            val = q_gram_jacc_sim(i_enc, j_enc)
+        else:
+            val = q_gram_dice_sim(i_enc, j_enc)
 
-class NonEncoder(Encoder):
+        if not sim:
+            val = 1 - val
+        tmp[pos] = np.array([uids[i], uids[j], val])
+        pos += 1
+    return tmp
 
-    def __init__(self, ngram_size: int, verbose: bool = False):
+def calc_ngram(string, n):
+    string = ["".join(string).replace(" ", "").lower()]
+    return set([[b[i:i + n] for i in range(len(b) - n + 1)] for b in string][0])
+
+
+class NonEncoder():
+
+    def __init__(self, ngram_size: int, verbose: bool = False, workers=-1):
         """
 
         """
         self.ngram_size = ngram_size
         self.verbose = verbose
+        self.workers = os.cpu_count() if workers == -1 else workers
+
+
 
     def encode_and_compare(self, data, uids, metric, sim=True):
         available_metrics = ["jaccard", "dice"]
-
-        pw_metrics = []
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        parallel = Parallel(n_jobs=self.workers)
+        output_generator = parallel(delayed(calc_ngram)(d, 2) for d in data)
+        cache = {}
+        for i, enc in enumerate(output_generator):
+            cache[uids[i]] = enc
 
-        data = ["".join(d).replace(" ", "").lower() for d in data]
-        # Split each string in the data into a list of qgrams to process
-        data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
+        numex = len(uids)
+        output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers * 4))
+        inds = np.vstack(output_generator)
+        inds = np.array_split(inds, self.workers)
 
-        for i, q_i in tqdm(enumerate(data), desc="Encoding", total=len(data), disable=not self.verbose):
-            for j, q_j in enumerate(data[i + 1:]):
-                if metric == "jaccard":
-                    val = q_gram_jacc_sim(set(q_i), set(q_j))
-                else:
-                    val = q_gram_dice_sim(set(q_i), set(q_j))
-                if not sim:
-                    val = 1 - val
-                pw_metrics.append(np.array([uids[i], uids[j + i + 1], val]))
-
-        return np.stack(pw_metrics).astype(float)
+        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
+        return np.vstack(pw_metrics)

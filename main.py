@@ -153,11 +153,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
                                        verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
         else:
-            alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
+            alice_encoder = NonEncoder(ENC_CONFIG["AliceN"], workers=GLOBAL_CONFIG["Workers"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Alice's Data")
-        alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=False)
+        alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True)
 
         del alice_data
 
@@ -178,8 +178,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     # Compute the threshold value for subsetting
     tres = np.quantile(alice_enc[:,2], EMB_CONFIG["AliceQuantile"])
 
-    # Only keep edges if their distance is below the threshold
-    alice_enc = alice_enc[(alice_enc[:, 2] < tres), :]
+    # Only keep edges if their similarity is above the threshold
+    alice_enc = alice_enc[(alice_enc[:, 2] > tres), :]
 
     # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
     if EMB_CONFIG["AliceDiscretize"]:
@@ -233,12 +233,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
                                        verbose=GLOBAL_CONFIG["Verbose"])
         else:
-            eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
+            eve_encoder = NonEncoder(ENC_CONFIG["EveN"], workers=GLOBAL_CONFIG["Workers"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Eve's Data")
 
-        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=False)
+        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True)
         del eve_data
 
         if GLOBAL_CONFIG["BenchMode"]:
@@ -258,7 +258,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         print("Computing Thresholds and subsetting data for Eve")
 
     tres = np.quantile(eve_enc[:, 2], EMB_CONFIG["EveQuantile"])
-    eve_enc = eve_enc[(eve_enc[:, 2] < tres), :]
+    eve_enc = eve_enc[(eve_enc[:, 2] > tres), :]
 
     if EMB_CONFIG["EveDiscretize"]:
         eve_enc[:, 2] = 1.0
@@ -516,8 +516,8 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_20k.tsv",
-        "Overlap": 0.25,
+        "Data": "./data/fakename_1k.tsv",
+        "Overlap": 0.9,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
@@ -528,16 +528,16 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "BloomFilter",
+        "AliceAlgo": None,
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
         "AliceBits": 40, # BF: 30, TMH: 1000
         "AliceN": 2,
         "AliceMetric": "dice",
-        "EveAlgo": "BloomFilter",
+        "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 40, # BF: 30, TMH: 1000
+        "EveBits": 20, # BF: 30, TMH: 1000
         "EveN": 2,
         "EveMetric": "dice",
         # For TMH encoding
@@ -551,20 +551,20 @@ if __name__ == "__main__":
         "AliceNHashFunc": 10,
         "AliceNHashCol": 1000,
         "AliceRandMode": "PNG",
-        "EveNHashFunc": 10,
+        "EveNHashFunc": 15,
         "EveNHashCol": 1000,
         "EveRandMode": "PNG"
     }
 
     EMB_CONFIG = {
         "Algo": "Node2Vec",
-        "AliceQuantile": 0.1,
+        "AliceQuantile": 0.9,
         "AliceDiscretize": False,
         "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
-        "EveQuantile": 0.1,
+        "EveQuantile": 0.9,
         "EveDiscretize": False,
         "EveDim": 128,
         "EveContext": 10,
