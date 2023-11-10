@@ -109,7 +109,7 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
 
 
 def compute_metrics(inds, cache, uids, metric, sim):
-    tmp = np.zeros((len(inds),3), dtype=float)
+    tmp = np.zeros((len(inds),3), dtype=np.float32)
     pos = 0
     prev_i = prev_j = None
     for i, j in inds:
@@ -309,7 +309,7 @@ class TSHEncoder():
 
         if self.workers > 1:
             numex = len(uids)
-            output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex),self.workers*4))
+            output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex),self.workers))
             inds = np.vstack(output_generator)
 
             #chunksize = len(inds) // self.workers
