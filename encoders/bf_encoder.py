@@ -61,14 +61,14 @@ class BFEncoder(Encoder):
                 fields.append(StringSpec(str(i),
                                          FieldHashingProperties(comparator=NgramComparison(
                                              self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
-                                             strategy=BitsPerFeatureStrategy(
+                                             strategy=BitsPerTokenStrategy(
                                                  self.bits_per_feature if type(self.bits_per_feature) == int else
                                                  self.bits_per_feature[i]
                                              ))))
             else:
                 fields.append(IntegerSpec(str(i), FieldHashingProperties(comparator=NgramComparison(
                     self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
-                    strategy=BitsPerFeatureStrategy(self.bits_per_feature if type(self.bits_per_feature) == int else
+                    strategy=BitsPerTokenStrategy(self.bits_per_feature if type(self.bits_per_feature) == int else
                                                     self.bits_per_feature[i]))))
             i += 1
 
