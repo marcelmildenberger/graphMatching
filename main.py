@@ -142,18 +142,19 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
             alice_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
-                                      ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
+                                    ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
         elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
-            alice_encoder = TMHEncoder(ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceTables"],
-                                       ENC_CONFIG["AliceKeyLen"], ENC_CONFIG["AliceValLen"], hashlib.md5,
-                                       ENC_CONFIG["AliceN"],
-                                       random_seed=ENC_CONFIG["AliceSecret"], verbose=GLOBAL_CONFIG["Verbose"])
+            alice_encoder = TMHEncoder(ENC_CONFIG["AliceNHash"], ENC_CONFIG["AliceNHashBits"],
+                                    ENC_CONFIG["AliceNSubKeys"], ENC_CONFIG["AliceN"],
+                                    ENC_CONFIG["Alice1BitHash"],
+                                    random_seed=ENC_CONFIG["AliceSecret"], verbose=GLOBAL_CONFIG["Verbose"],
+                                        workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
             alice_encoder = TSHEncoder(ENC_CONFIG["AliceNHashFunc"], ENC_CONFIG["AliceNHashCol"], ENC_CONFIG["AliceN"],
-                                       ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
-                                       verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
+                                    ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
+                                    verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
         else:
-            alice_encoder = NonEncoder(ENC_CONFIG["AliceN"], workers=GLOBAL_CONFIG["Workers"])
+            alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Alice's Data")
@@ -224,16 +225,17 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
                                     ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
         elif ENC_CONFIG["EveAlgo"] == "TabMinHash":
-            eve_encoder = TMHEncoder(ENC_CONFIG["EveBits"], ENC_CONFIG["EveTables"],
-                                     ENC_CONFIG["EveKeyLen"], ENC_CONFIG["EveValLen"], hashlib.md5,
-                                     ENC_CONFIG["EveN"],
-                                     random_seed=ENC_CONFIG["EveSecret"], verbose=GLOBAL_CONFIG["Verbose"])
+            eve_encoder = TMHEncoder(ENC_CONFIG["EveNHash"], ENC_CONFIG["EveNHashBits"],
+                                    ENC_CONFIG["EveNSubKeys"], ENC_CONFIG["EveN"],
+                                    ENC_CONFIG["Eve1BitHash"],
+                                    random_seed=ENC_CONFIG["EveSecret"], verbose=GLOBAL_CONFIG["Verbose"],
+                                        workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["EveAlgo"] == "TwoStepHash":
             eve_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
-                                       ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
-                                       verbose=GLOBAL_CONFIG["Verbose"])
+                                    ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
+                                    verbose=GLOBAL_CONFIG["Verbose"])
         else:
-            eve_encoder = NonEncoder(ENC_CONFIG["EveN"], workers=GLOBAL_CONFIG["Workers"])
+            eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Eve's Data")
@@ -528,30 +530,32 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": None,
+        "AliceAlgo": "TabMinHash",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
-        "AliceBits": 40, # BF: 30, TMH: 1000
+        "AliceBits": 30,  # BF: 30, TMH: 1000
         "AliceN": 2,
-        "AliceMetric": "dice",
+        "AliceMetric": "jaccard",
         "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 20, # BF: 30, TMH: 1000
+        "EveBits": 40,  # BF: 30, TMH: 1000
         "EveN": 2,
-        "EveMetric": "dice",
+        "EveMetric": "jaccard",
         # For TMH encoding
-        "AliceTables": 8,
-        "AliceKeyLen": 8,
-        "AliceValLen": 128,
-        "EveTables": 8,
-        "EveKeyLen": 8,
-        "EveValLen": 128,
+        "AliceNHash": 2000,
+        "AliceNHashBits": 64,
+        "AliceNSubKeys": 8,
+        "Alice1BitHash" : True,
+        "EveNHash": 2000,
+        "EveNHashBits": 64,
+        "EveNSubKeys": 8,
+        "Eve1BitHash" : True,
         # For 2SH encoding
         "AliceNHashFunc": 10,
         "AliceNHashCol": 1000,
         "AliceRandMode": "PNG",
-        "EveNHashFunc": 15,
+        "EveNHashFunc": 10,
         "EveNHashCol": 1000,
         "EveRandMode": "PNG"
     }
@@ -559,13 +563,13 @@ if __name__ == "__main__":
     EMB_CONFIG = {
         "Algo": "Node2Vec",
         "AliceQuantile": 0.9,
-        "AliceDiscretize": False,
+        "AliceDiscretize": True,
         "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
         "EveQuantile": 0.9,
-        "EveDiscretize": False,
+        "EveDiscretize": True,
         "EveDim": 128,
         "EveContext": 10,
         "EveNegative": 1,
