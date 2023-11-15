@@ -1,15 +1,17 @@
 import numpy as np
 import os
+import gc
 from joblib import Parallel, delayed
+
 def make_inds(i_vals, numex):
     tmp1 = []
     for i in i_vals:
         tmp2 = []
         for j in range(i + 1, numex):
-            tmp2.append(np.array([i, j], dtype=int))
+            tmp2.append(np.array([i, j], dtype=np.uint32))
         if len(tmp2)>0:
             tmp1.append(np.vstack(tmp2))
-    return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0,2), dtype=int)
+    return np.vstack(tmp1, dtype=np.uint32) if len(tmp1) > 0 else np.ndarray(shape=(0,2), dtype=np.uint32)
 
 
 def q_gram_dice_sim(q_gram_set1, q_gram_set2):
@@ -49,7 +51,7 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
 
 
 def compute_metrics(inds, cache, uids, metric, sim):
-    tmp = np.zeros((len(inds),3), dtype=np.float32)
+    tmp = np.zeros(len(inds), dtype=np.float32)
     pos = 0
     prev_i = prev_j = None
     for i, j in inds:
@@ -66,7 +68,7 @@ def compute_metrics(inds, cache, uids, metric, sim):
 
         if not sim:
             val = 1 - val
-        tmp[pos] = np.array([uids[i], uids[j], val])
+        tmp[pos] = val
         pos += 1
     return tmp
 
@@ -90,16 +92,44 @@ class NonEncoder():
     def encode_and_compare(self, data, uids, metric, sim=True):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        numex = len(uids)
+        uids = np.array(uids, dtype=np.float32)
+
         parallel = Parallel(n_jobs=self.workers)
         output_generator = parallel(delayed(calc_ngram)(d, 2) for d in data)
         cache = {}
+
         for i, enc in enumerate(output_generator):
             cache[uids[i]] = enc
-
-        numex = len(uids)
+        del output_generator, data
+        gc.collect()
         output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers))
+
         inds = np.vstack(output_generator)
+        numinds  = len(inds)
         inds = np.array_split(inds, self.workers)
+        gc.collect()
 
         pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
-        return np.vstack(pw_metrics)
+        del cache
+        gc.collect()
+
+        pw_metrics = np.concatenate(pw_metrics, axis=None)
+
+        re = np.zeros((numinds, 3), dtype=np.float32)
+
+        re[:,2] = pw_metrics
+        del pw_metrics
+        gc.collect()
+
+        start = 0
+        for i, ind in enumerate(inds):
+            ind[:, 0] = uids[ind[:, 0]]
+            ind[:, 1] = uids[ind[:, 1]]
+            end = start + len(ind)
+            re[start:end,0:2] = ind
+            start += len(ind)
+        del inds
+        gc.collect()
+        #...and add the metrics
+        return re
