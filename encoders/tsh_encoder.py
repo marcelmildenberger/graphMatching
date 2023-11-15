@@ -61,6 +61,7 @@
 
 # Adapted in 2023 by Jochen Schäfer
 import os
+import gc
 import random
 import string
 import numpy as np
@@ -109,7 +110,7 @@ def q_gram_jacc_sim(q_gram_set1, q_gram_set2):
 
 
 def compute_metrics(inds, cache, uids, metric, sim):
-    tmp = np.zeros((len(inds),3), dtype=np.float32)
+    tmp = np.zeros(len(inds), dtype=np.float32)
     pos = 0
     prev_i = prev_j = None
     for i, j in inds:
@@ -126,7 +127,7 @@ def compute_metrics(inds, cache, uids, metric, sim):
 
         if not sim:
             val = 1 - val
-        tmp[pos] = np.array([uids[i], uids[j], val])
+        tmp[pos] = val
         pos += 1
     return tmp
 
@@ -136,10 +137,10 @@ def make_inds(i_vals, numex):
     for i in i_vals:
         tmp2 = []
         for j in range(i + 1, numex):
-            tmp2.append(np.array([i, j], dtype=int))
+            tmp2.append(np.array([i, j], dtype=np.uint32))
         if len(tmp2)>0:
             tmp1.append(np.vstack(tmp2))
-    return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0,2), dtype=int)
+    return np.vstack(tmp1, dtype=np.uint32)
 
 class TSHEncoder():
     """A class that implements a column-based vector hashing approach for PPRL
@@ -294,52 +295,45 @@ class TSHEncoder():
     def encode_and_compare(self, data, uids, metric, sim=True):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        uids = [float(u) for u in uids]
+        numex = len(uids)
+        uids = np.array(uids, dtype=np.float32)
+
         data = ["".join(d).replace(" ", "").lower() for d in data]
         # Split each string in the data into a list of qgrams to process
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
 
         parallel = Parallel(n_jobs=self.workers)
-
         output_generator = parallel(delayed(self.encode) (i) for i in data)
         cache = {}
         for i, enc in enumerate(output_generator):
             cache[uids[i]] = enc
-        del output_generator
+        del output_generator, data
+        gc.collect()
 
-        if self.workers > 1:
-            numex = len(uids)
-            output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex),self.workers))
-            inds = np.vstack(output_generator)
+        output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex),self.workers))
+        inds = np.vstack(output_generator)
+        numinds  = len(inds)
+        inds = np.array_split(inds, self.workers)
+        gc.collect()
 
-            #chunksize = len(inds) // self.workers
-            inds = np.array_split(inds, self.workers)
-            # if chunksize < 1:
-            #     self.workers = 1
-            # else:
-            #     print("Splitting")
-            #     inds = split(inds, chunksize)
+        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
+        pw_metrics = np.concatenate(pw_metrics, axis=None)
+        del cache
+        gc.collect()
+        re = np.zeros((numinds, 3), dtype=np.float32)
 
-        if self.workers > 1:
-            pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
-            return np.vstack(pw_metrics)
+        re[:,2] = pw_metrics
+        del pw_metrics
+        gc.collect()
 
-        else:
-            dim = ((len(uids)*len(uids))-len(uids))//2
-            pw_metrics = np.zeros((dim, 3), dtype=float)
-            ind = 0
-            for i, uid in tqdm(enumerate(uids), desc="Encoding", total=len(data), disable=not self.verbose):
-                i_enc = cache[uid]
-                for j, q_j in enumerate(data[i + 1:]):
-                    j_enc = cache[uids[j + i + 1]]
-                    if metric == "jaccard":
-                        val = q_gram_jacc_sim(i_enc, j_enc)
-                    else:
-                        val = q_gram_dice_sim(i_enc, j_enc)
-
-                    if not sim:
-                        val = 1 - val
-
-                    pw_metrics[ind] = np.array([uid, uids[j + i + 1], val])
-                    ind += 1
-            return pw_metrics
+        start = 0
+        for i, ind in enumerate(inds):
+            end = start + len(ind)
+            ind[:, 0] = uids[ind[:, 0]]
+            ind[:, 1] = uids[ind[:, 1]]
+            re[start:end,0:2] = ind
+            start += len(ind)
+        del inds, uids
+        gc.collect()
+        #...and add the metrics
+        return re
