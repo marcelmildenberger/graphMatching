@@ -12,7 +12,7 @@ def est_1bit_jacc(arr_a, arr_b):
 
 
 def est_1bit_dice(arr_a, arr_b):
-    jacc = est_jacc(arr_a, arr_b)
+    jacc = est_1bit_jacc(arr_a, arr_b)
     return (2 * jacc) / (1 + jacc)
 
 
@@ -22,7 +22,7 @@ def dice_sim(arr_a, arr_b):
     return (2.0 * num_common) / (total_unique)
 
 
-def jacc_sim(q_gram_set1, q_gram_set2):
+def jacc_sim(arr_a, arr_b):
     size_intersection = len(np.intersect1d(arr_a, arr_b))
     size_union = len(np.union1d(arr_a, arr_b))
     return float(size_intersection / size_union)
@@ -115,14 +115,14 @@ class TMHEncoder():
         key = np.array([int(digit) for digit in key], dtype=bool)  # To numpy aray
         subkeys = np.array_split(key, self.num_sub_keys)  # Split key into c equally sized subkeys
         indices = np.packbits(subkeys, axis=-1).view(
-            self.subkey_dtype)  # Convert subkeys into into indices used for the hashtbales
+            self.subkey_dtype)  # Convert subkeys into indices used for the hashtbales
 
         minhashes = np.zeros((self.num_hash_func), dtype=self.minhash_dtype)
         for func_ind in range(self.num_hash_func):
             tmp = np.zeros((self.num_sub_keys, self.num_hash_bits), dtype=bool)
             for key_ind, table_ind in enumerate(indices):
                 tmp[key_ind] = self.hashtables[func_ind][key_ind][table_ind]
-            minhashes[func_ind] = min(np.packbits(tmp, axis=-1).view(self.minhash_dtype))  # identify minimum hash value
+            minhashes[func_ind] = np.packbits(np.bitwise_xor.reduce(tmp), axis=-1).view(self.minhash_dtype)  # identify minimum hash value
         return minhashes
 
     def hash_qgrams(self, qgrams):
