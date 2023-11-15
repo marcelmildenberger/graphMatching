@@ -98,6 +98,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
         n_alice = int(alice_enc[0][2])
         alice_enc = alice_enc[1:]
+        if GLOBAL_CONFIG["DropFrom"] == "Both":
+            with open("./data/encoded/overlap-%s.h5" % alice_enc_hash, "rb") as f:
+                overlap_count = pickle.load(f)
 
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_enc = -1
@@ -112,6 +115,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["DropFrom"] == "Both":
             # Compute the maximum number of overlapping records possible for the given dataset size and overlap
             overlap_count = int(-(GLOBAL_CONFIG["Overlap"] * len(alice_data) / (GLOBAL_CONFIG["Overlap"] - 2)))
+            with open("./data/encoded/overlap-%s.h5" % alice_enc_hash, "wb") as f:
+                pickle.dump(overlap_count, f, protocol=5)
             # Randomly select the overlapping records from the set of available records (all records in the data)
             available = list(range(len(alice_data)))
             selected_overlap = random.sample(available, overlap_count)
@@ -520,7 +525,7 @@ if __name__ == "__main__":
     GLOBAL_CONFIG = {
         "Data": "./data/fakename_1k.tsv",
         "Overlap": 0.9,
-        "DropFrom": "Alice",
+        "DropFrom": "Both",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
@@ -530,25 +535,25 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "TabMinHash",
+        "AliceAlgo": "BloomFilter",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceBFLength": 1024,
-        "AliceBits": 30,  # BF: 30, TMH: 1000
+        "AliceBits": 10,  # BF: 30, TMH: 1000
         "AliceN": 2,
-        "AliceMetric": "jaccard",
-        "EveAlgo": None,
+        "AliceMetric": "dice",
+        "EveAlgo": "BloomFilter",
         "EveSecret": "ATotallyDifferentString",
         "EveBFLength": 1024,
-        "EveBits": 40,  # BF: 30, TMH: 1000
+        "EveBits": 3,  # BF: 30, TMH: 1000
         "EveN": 2,
-        "EveMetric": "jaccard",
+        "EveMetric": "dice",
         # For TMH encoding
         "AliceNHash": 2000,
         "AliceNHashBits": 64,
         "AliceNSubKeys": 8,
         "Alice1BitHash" : True,
         "EveNHash": 2000,
-        "EveNHashBits": 64,
+        "EveNHashBits": 32,
         "EveNSubKeys": 8,
         "Eve1BitHash" : True,
         # For 2SH encoding
@@ -563,13 +568,13 @@ if __name__ == "__main__":
     EMB_CONFIG = {
         "Algo": "Node2Vec",
         "AliceQuantile": 0.9,
-        "AliceDiscretize": True,
+        "AliceDiscretize": False,
         "AliceDim": 128,
         "AliceContext": 10,
         "AliceNegative": 1,
         "AliceNormalize": True,
         "EveQuantile": 0.9,
-        "EveDiscretize": True,
+        "EveDiscretize": False,
         "EveDim": 128,
         "EveContext": 10,
         "EveNegative": 1,
