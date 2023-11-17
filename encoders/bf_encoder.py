@@ -27,7 +27,8 @@ def test(uids):
 class BFEncoder(Encoder):
 
     def __init__(self, secret: AnyStr, filter_size: int, bits_per_feature: Union[int, Sequence[int]],
-                 ngram_size: Union[int, Sequence[int]]):
+                 ngram_size: Union[int, Sequence[int]], diffusion=False, eld_length = None,
+                 t = None):
         """
         Constuctor for the BFEncoder class.
         :param secret: Secret to be used in the HMAC
@@ -37,12 +38,28 @@ class BFEncoder(Encoder):
         specified.
         :param ngram_size: Size of the ngrams. If an integer is passed, the same value is used for all attributes. If a
         list of integers is passed, one value per attribute must be specified.
+        :param diffusion: Specifies whether diffusion should be applied to the Bloom Filter
+        See paper of Armknecht, Heng and Schnell for details: https://doi.org/10.56553/POPETS-2023-0054
+        :param eld_length: Length of Bloom Filter after diffusion
+        :param t: Number of bits to be xor-ed for positions in Bloom Filter.
         """
-
         self.secret = secret
         self.filter_size = filter_size
         self.bits_per_feature = bits_per_feature
         self.ngram_size = ngram_size
+        self.diffusion = diffusion
+        self.eld_length = eld_length
+        self.t = t
+        self.indices = None
+
+        if diffusion:
+            assert eld_length is not None, "ELD length must be specified if diffusion is enabled"
+            assert t is not None, "Number of XORed bits must be specified if diffusion is enabled"
+            assert self.t <= self.filter_size, "Cannot select more bits for XORing than are present in the BF!"
+            # Generate t random random indices per bit in the diffused BF. Bits at this position of the BF are XORed
+            # to set the bit in the diffused BF.
+            self.indices = [np.random.choice(np.arange(self.filter_size), size=self.t, replace=False) for _ in range(self.eld_length)]
+
 
     def __create_schema(self, data: Sequence[Sequence[Union[str, int]]]):
         """
@@ -100,6 +117,15 @@ class BFEncoder(Encoder):
         # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
         # print("DEB: Stacking")
         enc_data = np.stack([list(barr) for barr in enc_data]).astype(bool)
+
+        if self.diffusion:
+            eld = np.zeros((enc_data.shape[0], self.eld_length), dtype=bool)
+
+            for i, cur_inds in enumerate(self.indices):
+                eld[:, i] = np.bitwise_xor.reduce(enc_data[:, cur_inds], axis=1)
+
+            enc_data = eld
+
         return enc_data
 
     def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
@@ -162,3 +188,4 @@ class BFEncoder(Encoder):
         gc.collect()
         #...and add the metrics
         return re
+
