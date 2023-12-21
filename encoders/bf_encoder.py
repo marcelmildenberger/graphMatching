@@ -3,6 +3,7 @@ import gc
 from typing import Sequence, AnyStr, List, Tuple, Any
 from .encoder import Encoder
 import numpy as np
+import hashlib
 from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
@@ -58,7 +59,26 @@ class BFEncoder(Encoder):
             assert self.t <= self.filter_size, "Cannot select more bits for XORing than are present in the BF!"
             # Generate t random random indices per bit in the diffused BF. Bits at this position of the BF are XORed
             # to set the bit in the diffused BF.
-            self.indices = [np.random.choice(np.arange(self.filter_size), size=self.t, replace=False) for _ in range(self.eld_length)]
+            if type(self.secret) == str:
+                random_seed = int(hashlib.md5(self.secret.encode()).hexdigest(), 16) % (2 ** 32 - 1)
+            else:
+                random_seed = self.secret
+            np.random.seed(random_seed)
+            self.indices = []
+            available_indices = np.arange(self.filter_size)
+            for j in range(self.eld_length):
+                if available_indices.shape[0] >= self.t:
+                    tmp = np.random.choice(available_indices, size=self.t, replace=False)
+                    available_indices = np.setdiff1d(available_indices, tmp)
+                else:
+                    tmp = available_indices
+                    available_indices = np.arange(self.filter_size)
+                    tt = np.random.choice(np.setdiff1d(available_indices, tmp), size=self.t-tmp.shape[0], replace=False)
+                    available_indices = np.setdiff1d(available_indices, tmp)
+                    tmp = np.union1d(tmp, tt)
+
+                self.indices.append(tmp)
+
 
 
     def __create_schema(self, data: Sequence[Sequence[Union[str, int]]]):
@@ -121,8 +141,14 @@ class BFEncoder(Encoder):
         if self.diffusion:
             eld = np.zeros((enc_data.shape[0], self.eld_length), dtype=bool)
 
+            #for i in range(enc_data.shape[0]):
+            #    for j in range(self.eld_length):
+            #        val = enc_data[i, self.indices[j][0]]
+            #        for k in self.indices[j][1:]:
+            #            val ^= enc_data[i,k]
+            #        eld[i,j] = val
             for i, cur_inds in enumerate(self.indices):
-                eld[:, i] = np.bitwise_xor.reduce(enc_data[:, cur_inds], axis=1)
+                eld[:, i] = np.logical_xor.reduce(enc_data[:, cur_inds], axis=1)
 
             enc_data = eld
 
