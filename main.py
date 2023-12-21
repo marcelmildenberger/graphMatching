@@ -91,22 +91,35 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
                                                         GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
 
+    ##############################################
+    #    ENCODING/SIMILARITY GRAPH GENERATION    #
+    ##############################################
+
+    # Check if Alice's data has been encoded before. If yes, load stored data.
     if os.path.isfile("./data/encoded/alice-%s.h5" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's encoded records")
 
+        # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
+        # floats to save memory.
         alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
+        # First row contains the number of records initially present in Alice's dataset. This is explicitly stored to
+        # avoid re-calculating it from the pairwise similarities.
+        # Extract the value and omit first row.
         n_alice = int(alice_enc[0][2])
         alice_enc = alice_enc[1:]
+        # If records were dropped from both datasets, we load the number of overlapping records. This is required
+        # to correctly compute the success rate later on
         if GLOBAL_CONFIG["DropFrom"] == "Both":
-            with open("./data/encoded/overlap-%s.h5" % alice_enc_hash, "rb") as f:
+            with open("./data/encoded/overlap-%s.pck" % alice_enc_hash, "rb") as f:
                 overlap_count = pickle.load(f)
 
+        # Set duration of encoding to -1 to indicate that stored records were used (Only relevant when benchmarking)
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_enc = -1
 
     else:
-        # Load and encode Alice's Data
+        # If no pre-computed encoding are found, load and encode Alice's Data
         if GLOBAL_CONFIG["Verbose"]:
             print("Loading Alice's data")
 
@@ -115,7 +128,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["DropFrom"] == "Both":
             # Compute the maximum number of overlapping records possible for the given dataset size and overlap
             overlap_count = int(-(GLOBAL_CONFIG["Overlap"] * len(alice_data) / (GLOBAL_CONFIG["Overlap"] - 2)))
-            with open("./data/encoded/overlap-%s.h5" % alice_enc_hash, "wb") as f:
+            with open("./data/encoded/overlap-%s.pck" % alice_enc_hash, "wb") as f:
                 pickle.dump(overlap_count, f, protocol=5)
             # Randomly select the overlapping records from the set of available records (all records in the data)
             available = list(range(len(alice_data)))
@@ -129,25 +142,33 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             available = [i for i in available if i not in selected_alice]
             # Merge Alice's records with the overlapping records
             selected_alice += selected_overlap
-            # Shuffle again because otherwise the order of the overlapping rows would be identical for Eve's and
+            # Shuffle because otherwise the order of the overlapping rows would be identical for Eve's and
             # Alice's data.
             selected_alice = random.sample(selected_alice, len(selected_alice))
 
         else:
-            # Subset and shuffle
+            # Randomly select the rows held by Alice. If we drop from Eve, Alice holds all (100%) of the records.
+            # In this case the selection is essentially a random shuffle of the rows.
             alice_ratio = GLOBAL_CONFIG["Overlap"] if GLOBAL_CONFIG["DropFrom"] == "Alice" else 1
             selected_alice = random.sample(range(len(alice_data)), int(alice_ratio * len(alice_data)))
 
+        # Sampling was done using the row indices. Now we have to build the actual dataset.
         alice_data = [alice_data[i] for i in selected_alice]
         alice_uids = [alice_uids[i] for i in selected_alice]
         n_alice = len(alice_uids)  # Initial number of records in alice's dataset. Required for success calculation
 
+        # Start timer for measuring the duration of the encoding of Alice's data.
         if GLOBAL_CONFIG["BenchMode"]:
             start_alice_enc = time.time()
 
+        # Define the encoder to be used for Alice's data.
+        ##############################
+        # ADD FUTURE EXTENSIONS HERE #
+        ##############################
         if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
             alice_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
-                                    ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"])
+                                    ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"], ENC_CONFIG["AliceDiffuse"],
+                                    ENC_CONFIG["AliceEldLength"], ENC_CONFIG["AliceT"])
         elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
             alice_encoder = TMHEncoder(ENC_CONFIG["AliceNHash"], ENC_CONFIG["AliceNHashBits"],
                                     ENC_CONFIG["AliceNSubKeys"], ENC_CONFIG["AliceN"],
@@ -163,27 +184,34 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Alice's Data")
+
+        # Encode Alice's data and compute pairwise similarities of the encodings.
+        # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
         alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True)
 
         del alice_data
 
+        # Compute duration of Alice's encoding
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_enc = time.time() - start_alice_enc
 
+        # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
         if GLOBAL_CONFIG["DevMode"]:
             np.savetxt("dev/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Alice's data")
 
+        # Prepend the initial number of records in Alice's dataset to the similarities and save them to disk.
+        # Uses HDF Format for increased performance.
+        # TODO: np.vstack tends to be slow for large arrays. Maybe replace with something faster/save in own file
         hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(np.float32), alice_enc]),
                  "./data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
-    # Compute the threshold value for subsetting
+    # Compute the threshold value for subsetting: Only keep the X% highest similarities.
     tres = np.quantile(alice_enc[:,2], EMB_CONFIG["AliceQuantile"])
-
     # Only keep edges if their similarity is above the threshold
     alice_enc = alice_enc[(alice_enc[:, 2] > tres), :]
 
@@ -194,41 +222,58 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Alice's data.")
 
+    # Check if Eve's data has been encoded before. If yes, load stored data.
     if os.path.isfile("./data/encoded/eve-%s.h5" % eve_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's encoded records")
 
+        # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
+        # floats to save memory.
         eve_enc = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
+        # First row contains the number of records initially present in Eve's dataset. This is explicitly stored to
+        # avoid re-calculating it from the pairwise similarities.
+        # Extract the value and omit first row.
         n_eve = int(eve_enc[0][2])
         eve_enc = eve_enc[1:]
-
+        # Set duration of encoding to -1 to indicate that stored records were used (Only relevant when benchmarking)
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = -1
     else:
-
-        # Load and encode Eve's Data
+        # If no pre-computed encoding are found, load and encode Eve's Data
         if GLOBAL_CONFIG["Verbose"]:
             print("Loading Eve's data")
         eve_data, eve_uids = read_tsv(GLOBAL_CONFIG["Data"])
 
+        # If records are dropped from both datasets, Eve's dataset consists of the overlapping records and the
+        # available records, i.e. those records that have not been added to Alice's dataset.
         if GLOBAL_CONFIG["DropFrom"] == "Both":
             selected_eve = selected_overlap + available
+            # Randomly shuffle the rows to avoid unintentionally leaking ground truth
             selected_eve = random.sample(selected_eve, len(selected_eve))
         else:
+            # Randomly select the rows held by Eve. If we drop from Alice, Eve holds all (100%) of the records.
+            # In this case the selection is essentially a random shuffle of the rows.
             eve_ratio = GLOBAL_CONFIG["Overlap"] if GLOBAL_CONFIG["DropFrom"] == "Eve" else 1
             selected_eve = random.sample(range(len(eve_data)), int(eve_ratio * len(eve_data)))
 
+        # Sampling was done using the row indices. Now we have to build the actual dataset.
         eve_data = [eve_data[i] for i in selected_eve]
         eve_uids = [eve_uids[i] for i in selected_eve]
-
         n_eve = len(eve_uids)
 
+        # Start timer for measuring the duration of the encoding of Alice's data.
         if GLOBAL_CONFIG["BenchMode"]:
             start_eve_enc = time.time()
 
+        # Define the encoder to be used for Eve's data.
+        ##############################
+        # ADD FUTURE EXTENSIONS HERE #
+        ##############################
+
         if ENC_CONFIG["EveAlgo"] == "BloomFilter":
             eve_encoder = BFEncoder(ENC_CONFIG["EveSecret"], ENC_CONFIG["EveBFLength"],
-                                    ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"])
+                                    ENC_CONFIG["EveBits"], ENC_CONFIG["EveN"], ENC_CONFIG["EveDiffuse"],
+                                    ENC_CONFIG["EveEldLength"], ENC_CONFIG["EveT"])
         elif ENC_CONFIG["EveAlgo"] == "TabMinHash":
             eve_encoder = TMHEncoder(ENC_CONFIG["EveNHash"], ENC_CONFIG["EveNHashBits"],
                                     ENC_CONFIG["EveNSubKeys"], ENC_CONFIG["EveN"],
@@ -245,55 +290,80 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Encoding Eve's Data")
 
+        # Encode Alice's data and compute pairwise similarities of the encodings.
+        # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
+
         eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True)
         del eve_data
 
+        # Compute duration of Alice's encoding
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = time.time() - start_eve_enc
 
+        # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
         if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("dev/eve.eve", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
-            #save_tsv(eve_enc, "dev/eve.edg")
+            np.savetxt("dev/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
 
+        # Prepend the initial number of records in Eve's dataset to the similarities and save them to disk.
+        # Uses HDF Format for increased performance.
+        # TODO: np.vstack tends to be slow for large arrays. Maybe replace with something faster/save in own file
         hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(np.float32), eve_enc]),
                  "./data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
 
+    # Compute the threshold value for subsetting: Only keep the X% highest similarities.
     tres = np.quantile(eve_enc[:, 2], EMB_CONFIG["EveQuantile"])
     eve_enc = eve_enc[(eve_enc[:, 2] > tres), :]
 
+    # Optionally sets all remaining similarities to 1, essentially creating an unweighted graph.
     if EMB_CONFIG["EveDiscretize"]:
         eve_enc[:, 2] = 1.0
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Eve's data.")
 
+    ###################
+    #    EMBEDDING    #
+    ###################
+
+    # Start timer to measure duration of embedding for Alice's data
     if GLOBAL_CONFIG["BenchMode"]:
         start_alice_emb = time.time()
 
+    # Check if data has been embedded before. If yes, load stored embeddings from disk.
     if os.path.isfile("./data/embeddings/alice-%s.h5" % alice_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's embeddings")
 
+        # If embeddings are present, load them
         alice_embeddings = hkl.load("./data/embeddings/alice-%s.h5" % alice_emb_hash).astype(np.float32)
 
+        # Loads the UIDs of the embeddings
         with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "rb") as f:
             alice_uids = pickle.load(f)
 
+        # Set embedding duration to -1 to inidicate that pre-computed embeddings were used.
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_emb = -1
 
     else:
-
+        # If no pre-computed embeddings are found, embed the encoded data
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Alice's data. This may take a while...")
 
+        # Define the embedding algorithm to be used for Alice's data.
+        ##############################
+        # ADD FUTURE EXTENSIONS HERE #
+        ##############################
+
         if EMB_CONFIG["Algo"] == "Node2Vec":
+            # PecanPy expects an edgelist on disk: Save similarities to edgelist format
+            # TODO: Check if we can somehow pass the data directly to PecanPy
             np.savetxt("data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
@@ -311,9 +381,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
             alice_embedder.train(alice_enc)
 
+        # Compute the duration of the embedding
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_alice_emb = time.time() - start_alice_emb
 
+        # Optionally save trained model for further inspection
         if GLOBAL_CONFIG["DevMode"]:
             alice_embedder.save_model("./dev", "alice.mod")
 
@@ -323,35 +395,51 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
         # similarity.
         alice_embeddings, alice_uids = alice_embedder.get_vectors()
-
         del alice_embedder
 
+        # Save Embeddings and UIDs to disk (rows in embedding matrix are ordered according to the uids)
         hkl.dump(alice_embeddings, "./data/embeddings/alice-%s.h5" % alice_emb_hash, mode='w')
         with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "wb") as f:
             pickle.dump(alice_uids, f, protocol=5)
 
+    # Create a dictionary that maps UIDs to their respective row index (Only used if alignment using ground truth is
+    # selected)
     alice_indexdict = dict(zip(alice_uids, range(len(alice_uids))))
 
+    # Check if Eve's data has been embedded before. If yes, load stored embeddings from disk.
     if os.path.isfile("./data/embeddings/eve-%s.h5" % eve_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's embeddings")
 
+        # If embeddings are present, load them. Single precision floats to save memory.
         eve_embeddings = hkl.load("./data/embeddings/eve-%s.h5" % eve_emb_hash).astype(np.float32)
+
+        # Loads the UIDs of the embeddings
         with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "rb") as f:
             eve_uids = pickle.load(f)
 
+        # Set embedding duration to -1 to inidicate that pre-computed embeddings were used.
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_emb = -1
 
     else:
-
+        # If no pre-computed embeddings are found, embed the encoded data
+        # Start timer
         if GLOBAL_CONFIG["BenchMode"]:
             start_eve_emb = time.time()
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Eve's data. This may take a while...")
 
+        # Define the embedding algorithm to be used for Eve's data.
+        ##############################
+        # ADD FUTURE EXTENSIONS HERE #
+        ##############################
+
         if EMB_CONFIG["Algo"] == "Node2Vec":
+            # PecanPy expects an edgelist on disk: Save similarities to edgelist format
+            # TODO: Check if we can somehow pass the data directly to PecanPy
+
             np.savetxt("data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
@@ -366,26 +454,36 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                          EMB_CONFIG["EveNormalize"])
             eve_embedder.train(eve_enc)
 
+        # Compute the duration of the embedding
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_emb = time.time() - start_eve_emb
 
+        # Optionally save trained model for further inspection
         if GLOBAL_CONFIG["DevMode"]:
             eve_embedder.save_model("./dev", "eve.mod")
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done embedding Eve's data.")
 
+        # We have to redefine the uids to account for the fact that nodes might have been dropped while ensuring minimum
+        # similarity.
         eve_embeddings, eve_uids = eve_embedder.get_vectors()
 
         del eve_embedder
 
+        # Save Embeddings and UIDs to disk (rows in embedding matrix are ordered according to the uids)
         hkl.dump(eve_embeddings, "./data/embeddings/eve-%s.h5" % eve_emb_hash, mode='w')
         with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "wb") as f:
             pickle.dump(eve_uids, f, protocol=5)
 
+    # Create a dictionary that maps UIDs to their respective row index (Only used if alignment using ground truth is
+    # selected)
     eve_indexdict = dict(zip(eve_uids, range(len(eve_uids))))
 
-    # Alignment
+    #############################
+    #    EMBEDDING ALIGNMENT    #
+    #############################
+
     if GLOBAL_CONFIG["BenchMode"]:
         start_align_prep = time.time()
 
@@ -511,10 +609,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                  elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping,
                  elapsed_relevant]
 
-        if not os.path.isfile("./data/benchmark.tsv"):
-            save_tsv([keys], "./data/benchmark.tsv")
+        if not os.path.isfile("data/benchmark.tsv"):
+            save_tsv([keys], "data/benchmark.tsv")
 
-        save_tsv([vals], "./data/benchmark.tsv", mode="a")
+        save_tsv([vals], "data/benchmark.tsv", mode="a")
 
     return mapping
 
@@ -523,8 +621,8 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_1k.tsv",
-        "Overlap": 0.9,
+        "Data": "./data/fakename_20k.tsv",
+        "Overlap": 0.2,
         "DropFrom": "Both",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
@@ -537,25 +635,32 @@ if __name__ == "__main__":
     ENC_CONFIG = {
         "AliceAlgo": "BloomFilter",
         "AliceSecret": "SuperSecretSalt1337",
-        "AliceBFLength": 1024,
-        "AliceBits": 10,  # BF: 30, TMH: 1000
         "AliceN": 2,
         "AliceMetric": "dice",
         "EveAlgo": "BloomFilter",
-        "EveSecret": "ATotallyDifferentString",
-        "EveBFLength": 1024,
-        "EveBits": 3,  # BF: 30, TMH: 1000
+        "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,
         "EveMetric": "dice",
+        # For BF encoding
+        "AliceBFLength": 1024,
+        "AliceBits": 10,
+        "AliceDiffuse": False,
+        "AliceT": 10,
+        "AliceEldLength": 1024,
+        "EveBFLength": 1024,
+        "EveBits": 10,
+        "EveDiffuse": False,
+        "EveT": 10,
+        "EveEldLength": 1024,
         # For TMH encoding
-        "AliceNHash": 2000,
+        "AliceNHash": 1024,
         "AliceNHashBits": 64,
         "AliceNSubKeys": 8,
-        "Alice1BitHash" : True,
+        "Alice1BitHash": True,
         "EveNHash": 2000,
         "EveNHashBits": 32,
         "EveNSubKeys": 8,
-        "Eve1BitHash" : True,
+        "Eve1BitHash": True,
         # For 2SH encoding
         "AliceNHashFunc": 10,
         "AliceNHashCol": 1000,
@@ -580,7 +685,7 @@ if __name__ == "__main__":
         "EveNegative": 1,
         "EveNormalize": True,
         # For Node2Vec
-        "AliceWalkLen":100,
+        "AliceWalkLen": 100,
         "AliceNWalks": 20,
         "AliceP": 250, #0.5
         "AliceQ": 300,    #2z
@@ -595,12 +700,12 @@ if __name__ == "__main__":
     }
 
     ALIGN_CONFIG = {
-        "RegWS": GLOBAL_CONFIG["Overlap"]/2, #0005
+        "RegWS": max(0.1, GLOBAL_CONFIG["Overlap"]/2), #0005
         "RegInit":1, # For BF 0.25
         "Batchsize": 1, # 1 = 100%
         "LR": 200.0,
-        "NIterWS": 100,
-        "NIterInit": 5  ,  # 800
+        "NIterWS": 20,
+        "NIterInit": 5 ,  # 800
         "NEpochWS": 100,
         "LRDecay": 0.999,
         "Sqrt": True,
