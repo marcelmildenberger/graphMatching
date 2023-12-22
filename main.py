@@ -484,8 +484,20 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     #    EMBEDDING ALIGNMENT    #
     #############################
 
+    # Start the timer for measuring the duration of alignment
     if GLOBAL_CONFIG["BenchMode"]:
         start_align_prep = time.time()
+
+    # Select the Data to be used for alignment:
+    # GroundTruth:  If Ground Truth is known, the first "MaxLoad" UIDs of Alices Data are selected. The corresponding
+    #               embeddings of Alice and Eve added to the alignment dataset. This results in two equally sized
+    #               lists (one for ALice, one for Eve) of 1D Arrays. In both lists, the sameindices refer to the
+    #               embeddings of the same UID, thus allowing alignment via orthogonal procrustes.
+    #
+    # Random:       Randomly selects "MaxLoad" records from Alice's and Eve's data. This results in to equally shaped
+    #               matrices, however, there is no guaranteed correspondence of the rows.
+    #
+    # None/Else:    Use entire datasets for alignment
 
     if ALIGN_CONFIG["Selection"] == "GroundTruth":
         alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
@@ -501,23 +513,30 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_sub = alice_embeddings
         eve_sub = eve_embeddings
 
+
+    # Sets the Batchsize: "Auto" sets it to 85% of the smaller dataset. Numbers smaller or equal to 1 are interpreted
+    # as percentages of the smaller dataset. Batchsize is capped to 20,000.
+
     if ALIGN_CONFIG["Batchsize"] == "Auto":
         bs = min(len(alice_sub), len(eve_sub))
         bs = int(0.85 * bs)
         ALIGN_CONFIG["Batchsize"] = bs
 
-    if ALIGN_CONFIG["Batchsize"] <= 2:
+    if ALIGN_CONFIG["Batchsize"] <= 1:
         bs = int(ALIGN_CONFIG["Batchsize"]*min(len(alice_sub), len(eve_sub)))
-        bs = min(bs, 30000)
         ALIGN_CONFIG["Batchsize"] = bs
 
+    ALIGN_CONFIG["Batchsize"] = min(ALIGN_CONFIG["Batchsize"], 20000)
 
     del alice_enc, eve_enc
 
-    if ALIGN_CONFIG["Selection"] in ["Degree", "GroundTruth"]:
+    # Adjust data format (Turn list of 1D-Arrays into 2D-Array).
+
+    if ALIGN_CONFIG["Selection"] in ["GroundTruth"]:
         alice_sub = np.stack(alice_sub, axis=0)
         eve_sub = np.stack(eve_sub, axis=0)
 
+    # Calculate duration of preprocessing for alignment
     if GLOBAL_CONFIG["BenchMode"]:
         elapsed_align_prep = time.time() - start_align_prep
         start_align = time.time()
@@ -525,7 +544,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["Verbose"]:
         print("Aligning vectors. This may take a while.")
 
+    # Define alignment methods
     if ALIGN_CONFIG["Wasserstein"]:
+        # Heuristically sets regularization if not specified otherwise
         if ALIGN_CONFIG["RegWS"] == "Auto":
             if ENC_CONFIG["EveAlgo"] == "TwoStepHash" or ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
                 ALIGN_CONFIG["RegWS"] = 0.1
@@ -540,9 +561,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     else:
         aligner = ProcrustesAligner()
 
+    # Compute transformation matrix
     transformation_matrix = aligner.align(alice_sub, eve_sub)
+    # Projects Eve's embeddings into Alice's space by multiplying Eve's embeddings with the transformation matrix.
     eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
 
+    # Compute duration of alignment.
     if GLOBAL_CONFIG["BenchMode"]:
         elapsed_align = time.time() - start_align
 
@@ -553,6 +577,20 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["BenchMode"]:
         start_mapping = time.time()
 
+    # Creates the "matcher" object responsible for the bipartite graph matching.
+    # MinWeight:    Minimum Weight bipartite matching: Finds a full 1-to-1 mapping such that the overall sum of weights
+    #               (distances between nodes) is minimized.
+    #
+    # Stable:       Computes a 1-to-1 matching by solving the stable marriage problem:
+    #               https://en.wikipedia.org/wiki/Stable_marriage_problem
+    #
+    # Symmetric:    Computes a symmetric 1-to-1 matching. Two nodes A and B are matched if and only if sim(A,B) is the
+    #               highest similarity of A to any other node AND of B to any other node. This does not guarantee a full
+    #               matching.
+    #
+    # NearestNeigbor:   Matches each node to its closest neighbor (i.e. the one with the lowest distance). This is
+    #                   considerably more efficient than the bipartite matchings, especially on larger datasets.
+    #                   However, it does not guarantee 1-to-1 mappings.
     if GLOBAL_CONFIG["Matching"] == "MinWeight":
         matcher = MinWeightMatcher(GLOBAL_CONFIG["MatchingMetric"])
     elif GLOBAL_CONFIG["Matching"] == "Stable":
@@ -562,8 +600,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     elif GLOBAL_CONFIG["Matching"] == "NearestNeighbor":
         matcher = NNMatcher(GLOBAL_CONFIG["MatchingMetric"])
 
+    # Compute the mapping. Results in a list of the form [("S_1","L_2"),...], where "L_XXX" represents the UIDs in the
+    # larger dataset and "S_XXX" represents the UIDs in the smaller dataset.
+    # Note that mappings are included twice: Once as a mapping from S to L and once fom L to S.
+    # These redundant mappings must be ignored when computing the success rate.
     mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
 
+    # Compute durations of mapping and overall attack.
     if GLOBAL_CONFIG["BenchMode"]:
         elapsed_mapping = time.time() - start_mapping
         elapsed_relevant = time.time() - start_alice_emb
