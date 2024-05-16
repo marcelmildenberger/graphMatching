@@ -337,3 +337,20 @@ class TSHEncoder():
         gc.collect()
         #...and add the metrics
         return re
+
+
+    def encode_records(self, data, uids):
+
+        data = ["".join(d).replace(" ", "").lower() for d in data]
+        # Split each string in the data into a list of qgrams to process
+        data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
+
+        parallel = Parallel(n_jobs=self.workers)
+        output_generator = parallel(delayed(self.encode) (i) for i in data)
+        cache = {}
+        for i, enc in enumerate(output_generator):
+            cache[uids[i]] = enc
+        del output_generator, data
+        gc.collect()
+
+        return cache

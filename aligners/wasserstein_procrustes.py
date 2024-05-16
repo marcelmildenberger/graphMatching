@@ -121,7 +121,7 @@ class WassersteinAligner:
 
             if obj < best_obj:
                 improved_ratio = obj / first_obj
-                if best_obj != float("inf") and improved_ratio < 0.9:
+                if best_obj != float("inf") and improved_ratio < 0.85:
                     if self.verbose:
                         print("Objective of  %.3f is %2.2f %% of initial value. Early stopping..." % (
                         obj, improved_ratio * 100))
@@ -159,11 +159,11 @@ class WassersteinAligner:
             X_c = self.X
             Y_c = self.Y
 
-        if X_c.shape[0] > 20000:
-            X_c = X_c[torch.randperm(len(X_c))[:20000]]
+        if X_c.shape[0] > 10000:
+            X_c = X_c[torch.randperm(len(X_c))[:10000]]
 
-        if Y_c.shape[0] > 20000:
-            Y_c = Y_c[torch.randperm(len(Y_c))[:20000]]
+        if Y_c.shape[0] > 10000:
+            Y_c = Y_c[torch.randperm(len(Y_c))[:10000]]
 
         n, d = X_c.shape
 
@@ -203,7 +203,7 @@ class WassersteinAligner:
         t0 = time.time()
 
         best_obj = float("inf")
-        for i in range(10):
+        for i in range(3):
             if self.verbose:
                 print("\nComputing initial mapping with convex relaxation...")
             t0 = time.time()
