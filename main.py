@@ -373,13 +373,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                          seed=EMB_CONFIG["AliceSeed"], workers=GLOBAL_CONFIG["Workers"],
                                          verbose=GLOBAL_CONFIG["Verbose"])
             alice_embedder.train("./data/edgelists/alice.edg")
-
+        #elif EMB_CONFIG["Explicit"] == "Node2Vec":
         else:
             alice_embedder = NetMFEmbedder(EMB_CONFIG["AliceDim"], EMB_CONFIG["AliceContext"],
                                            EMB_CONFIG["AliceNegative"],
                                            EMB_CONFIG["AliceNormalize"])
 
             alice_embedder.train(alice_enc)
+
+
 
         # Compute the duration of the embedding
         if GLOBAL_CONFIG["BenchMode"]:
@@ -664,8 +666,8 @@ if __name__ == "__main__":
     # Some global parameters
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_20k.tsv",
-        "Overlap": 0.2,
+        "Data": "./data/fakename_2k.tsv",
+        "Overlap": 1,
         "DropFrom": "Both",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
