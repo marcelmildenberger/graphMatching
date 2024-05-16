@@ -5,6 +5,8 @@ import math
 import networkx as nx
 import numpy as np
 from tqdm import tqdm
+from sklearn.preprocessing import normalize
+
 
 # Return Method for the defaultdict
 def ret_zero():
@@ -13,34 +15,61 @@ def ret_zero():
 
 class ExplicitEmbedder():
 
-    def __init__(self, edgelist_dir, encodings, uids, verbose=False):
-        self.edgelist_dir = edgelist_dir
+    def __init__(self, graph, encodings, uids, min_component_size=None, verbose=False):
         self.encodings = encodings
         self.uids = uids
+        self.min_component_size = min_component_size
         self.G = None
         self.num_edges = None
         self.num_nodes = None
         self.max_degree = None
+        self.degree_centr = None
+        self.betweenness_centr = None
         self.length_dict = {}
         self.node_frequencies = {}
         self.verbose = verbose
 
-        self.__load()
+        if type(graph) == str:
+            self.__load(graph)
+        else:
+            self.G = graph
+
+        if min_component_size is not None:
+            self.__enforce_component_size()
+
         self.__init_dicts()
 
-    def __load(self):
+    def __load(self, edgelist_dir):
         """
         Loads the similarity graph from a weighted edgelist to NetworkX.
         :return:
         """
-        self.G = nx.read_weighted_edgelist(self.edgelist_dir)
+        self.G = nx.read_weighted_edgelist(edgelist_dir)
         self.num_nodes = self.G.number_of_nodes()
         self.num_edges = self.G.number_of_edges()
         _, self.max_degree = sorted(self.G.degree, key=itemgetter(1))[-1]
+        self.max_log_degree = math.floor(math.log(self.max_degree, 2))
+
         if self.verbose:
             print("Loaded Graph with %i nodes, %i edges and maximum node degree of %i." % (
                 self.num_nodes, self.num_edges, self.max_degree))
 
+    def __enforce_component_size(self):
+
+        conn_comp = list(nx.connected_components(self.G))
+        small_comp = [comp for comp in conn_comp if len(comp) < self.min_component_size]
+        drop = [node for comp in small_comp for node in comp]
+        if self.verbose:
+            print("Similarity Graph has %i connected components, %i of which are smaller than the minimum connected "
+                  "component size %i. Dropping %i nodes." % (len(conn_comp), len(small_comp),
+                                                             self.min_component_size, len(drop)))
+
+        for d in drop:
+            self.G.remove_node(d)
+            self.num_nodes -= 1
+
+        if self.verbose:
+            print("Done.")
 
     def __init_dicts(self):
         """
@@ -89,17 +118,17 @@ class ExplicitEmbedder():
 
         self.degree_centr = nx.degree_centrality(self.G)
 
-    def get_vectors(self, ordering = None, max_log_degree=None):
+    def get_vectors(self, ordering=None, hist_features=None):
 
-        if max_log_degree is None:
-            max_log_degree = math.floor(math.log(self.max_degree, 2))
+        if hist_features is None:
+            hist_features = self.max_log_degree
 
         if ordering is None:
             ordering = list(self.G.nodes())
 
         # Initialize the feature array
-        num_feat = 11 + (2 * (max_log_degree + 1))
-        feat_array = np.zeros((self.num_nodes, num_feat), dtype=np.float32)
+        num_feat = 11 + (2 * (hist_features + 1))
+        feat_array = np.zeros((len(ordering), num_feat), dtype=np.float32)
 
         if self.verbose:
             print("Done. Computing %i features for %i nodes" % (num_feat, len(ordering)))
@@ -117,7 +146,7 @@ class ExplicitEmbedder():
             feat_array[i, j] = len(connected_edges)
             j += 1
             edgeweights = [self.G.get_edge_data(edge[0], edge[1])["weight"] for edge in connected_edges]
-            if len(edgeweights)>0:
+            if len(edgeweights) > 0:
                 # Maximum edge weight
                 feat_array[i, j] = max(edgeweights)
                 j += 1
@@ -167,11 +196,14 @@ class ExplicitEmbedder():
                     neighbor_one_neighborhood.intersection(neighbor_set))
             for two_neighbor in two_neighborhood:
                 two_neighbor_log_degree = math.floor(math.log(self.G.degree(two_neighbor), 2))
-                feat_array[i, 11 + max_log_degree + 1 + two_neighbor_log_degree] += 1
+                feat_array[i, 11 + hist_features + 1 + two_neighbor_log_degree] += 1
             feat_array[i, j] = egonet_degree
             j += 1
             feat_array[i, j] = self.betweenness_centr[node]
             j += 1
             feat_array[i, j] = self.degree_centr[node]
 
+        # Normalize feature vectors
+        # Note: Column-Wise normalization
+        feat_array = normalize(feat_array, axis=0, norm='max')
         return feat_array, ordering
