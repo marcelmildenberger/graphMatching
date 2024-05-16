@@ -1,37 +1,46 @@
 from main import run
 
 GLOBAL_CONFIG = {
-    "Data": "./data/fakename_5k.tsv",
-    "Overlap": 0.4,
-    "DropFrom": "Alice",
+    "Data": "./data/fakename_1k.tsv",
+    "Overlap": 0.9,
+    "DropFrom": "Both",
     "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
     "BenchMode": True,  # Benchmark Mode
     "Verbose": False,  # Print Status Messages?
-    "MatchingMetric": "euclidean",
-    "Matching": "NearestNeighbor",
+    "MatchingMetric": "cosine",
+    "Matching": "MinWeight",
     "Workers": -1
 }
 
 ENC_CONFIG = {
-    "AliceAlgo": "TwoStepHash",
+    "AliceAlgo": "BloomFilter",
     "AliceSecret": "SuperSecretSalt1337",
-    "AliceBFLength": 1024,
-    "AliceBits": 30,  # BF: 30, TMH: 1000
     "AliceN": 2,
     "AliceMetric": "dice",
-    "EveAlgo": "TwoStepHash",
-    "EveSecret": "ATotallyDifferentString",
-    "EveBFLength": 1024,
-    "EveBits": 30,  # BF: 30, TMH: 1000
+    "EveAlgo": "None",
+    "EveSecret": "ATotallyDifferentString42",
     "EveN": 2,
     "EveMetric": "dice",
+    # For BF encoding
+    "AliceBFLength": 1024,
+    "AliceBits": 10,
+    "AliceDiffuse": True,
+    "AliceT": 10,
+    "AliceEldLength": 1024,
+    "EveBFLength": 1024,
+    "EveBits": 10,
+    "EveDiffuse": True,
+    "EveT": 10,
+    "EveEldLength": 1024,
     # For TMH encoding
-    "AliceTables": 8,
-    "AliceKeyLen": 8,
-    "AliceValLen": 128,
-    "EveTables": 8,
-    "EveKeyLen": 8,
-    "EveValLen": 128,
+    "AliceNHash": 1024,
+    "AliceNHashBits": 64,
+    "AliceNSubKeys": 8,
+    "Alice1BitHash": True,
+    "EveNHash": 2000,
+    "EveNHashBits": 32,
+    "EveNSubKeys": 8,
+    "Eve1BitHash": True,
     # For 2SH encoding
     "AliceNHashFunc": 10,
     "AliceNHashCol": 1000,
@@ -42,16 +51,16 @@ ENC_CONFIG = {
 }
 
 EMB_CONFIG = {
-    "Algo": "NetMF",
-    "AliceQuantile": 0.1,
+    "Algo": "Node2Vec",
+    "AliceQuantile": 0.9,
     "AliceDiscretize": False,
-    "AliceDim": 80,
+    "AliceDim": 128,
     "AliceContext": 10,
     "AliceNegative": 1,
     "AliceNormalize": True,
-    "EveQuantile": 0.1,
+    "EveQuantile": 0.9,
     "EveDiscretize": False,
-    "EveDim": 80,
+    "EveDim": 128,
     "EveContext": 10,
     "EveNegative": 1,
     "EveNormalize": True,
@@ -59,7 +68,7 @@ EMB_CONFIG = {
     "AliceWalkLen": 100,
     "AliceNWalks": 20,
     "AliceP": 250,  # 0.5
-    "AliceQ": 300,  # 2
+    "AliceQ": 300,  # 2z
     "AliceEpochs": 5,
     "AliceSeed": 42,
     "EveWalkLen": 100,
@@ -67,51 +76,36 @@ EMB_CONFIG = {
     "EveP": 250,  # 0.5
     "EveQ": 300,  # 2
     "EveEpochs": 5,
-    "EveSeed": 42,
+    "EveSeed": 42
 }
 
 ALIGN_CONFIG = {
-    "RegWS": "Auto",
-    "RegInit": 0.25, # For BF 1
-    "Batchsize": "Auto",
-    "LR": 300.0,
-    "NIterWS": 5,
-    "NIterInit": 50,  # For BF: 10
-    "NEpochWS": 200,
-    "LRDecay": 0.9,
-    "Sqrt": False,
-    "EarlyStopping": 20,
+    "RegWS": GLOBAL_CONFIG["Overlap"] / 2,  # 0005
+    "RegInit": 1,  # For BF 0.25
+    "Batchsize": 1,  # 1 = 100%
+    "LR": 200.0,
+    "NIterWS": 20,
+    "NIterInit": 5,  # 800
+    "NEpochWS": 100,
+    "LRDecay": 0.999,
+    "Sqrt": True,
+    "EarlyStopping": 10,
     "Selection": "None",
-    "Wasserstein": True,
+    "MaxLoad": None,
+    "Wasserstein": True
 }
-
 # Global params
 datasets = ["fakename_1k.tsv", "fakename_2k.tsv", "fakename_5k.tsv", "fakename_10k.tsv", "fakename_20k.tsv",
             "fakename_50k.tsv", "fakename_100k.tsv"]
-overlap = [i/100 for i in range(10, 105, 5)]
-discretize = [False, True]
+overlap = [i/100 for i in range(5, 105, 5)]
+discretize = [False]
 
-for z in discretize:
-    for d in datasets:
-        GLOBAL_CONFIG["Data"] = "./data/" + d
-        if d == "fakename_1k.tsv":
-            EMB_CONFIG["AliceDim"] = 80
-            EMB_CONFIG["EveDim"] = 80
-            GLOBAL_CONFIG["Matching"] = "MinWeight"
-        elif d == "fakename_2k.tsv":
-            EMB_CONFIG["AliceDim"] = 100
-            EMB_CONFIG["EveDim"] = 100
-            GLOBAL_CONFIG["Matching"] = "MinWeight" # For 2SH: Nearest Neighbor
-        else:
-            EMB_CONFIG["AliceDim"] = 128
-            EMB_CONFIG["EveDim"] = 128
-            GLOBAL_CONFIG["Matching"] = "NearestNeighbor"
-
-        for o in overlap:
-            GLOBAL_CONFIG["Overlap"] = o
+for d in datasets:
+    GLOBAL_CONFIG["Data"] = "./data/" + d
+    for o in overlap:
+        GLOBAL_CONFIG["Overlap"] = o
+        ALIGN_CONFIG["RegWS"] = max(0.1, o/2)
+        for z in discretize:
             EMB_CONFIG["AliceDiscretize"] = z
             EMB_CONFIG["EveDiscretize"] = z
             run(GLOBAL_CONFIG.copy(), ENC_CONFIG.copy(), EMB_CONFIG.copy(), ALIGN_CONFIG.copy())
-
-
-

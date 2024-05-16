@@ -40,7 +40,7 @@ def make_inds(i_vals, numex):
 
 
 def compute_metrics(inds, cache, uids, metric, sim, onebit):
-    tmp = np.zeros((len(inds), 3), dtype=float)
+    tmp = np.zeros((len(inds), 3), dtype=np.float32)
     pos = 0
     prev_i = prev_j = None
     for i, j in inds:
@@ -137,7 +137,7 @@ class TMHEncoder():
 
     def encode(self, data):
         hashes = np.zeros((len(data), self.num_hash_func), dtype=bool if self.one_bit_hash else self.minhash_dtype)
-        data = ["".join(d).replace(" ", "") for d in data]
+        data = ["".join(d).replace(" ", "").lower() for d in data]
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
         for i, qg in enumerate(data):
             hashes[i] = self.hash_qgrams(qg)
