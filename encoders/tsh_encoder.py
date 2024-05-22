@@ -94,16 +94,15 @@ class TSHEncoder():
              - num_hash_col    The number of hash columns, i.e. bit arrays, to be
                                generated.
              - rand_mode       The random integer number generation mode, this can
-                               either be generated using SHA function combines with
-                               a modulo operation (MOD) or using a pseudo number
-                               generator (PNG).
+                               either be generated using SHA-256 (SHA) or using a
+                               pseudo random number generator (PNG).
            Output:
              - This method does not return anything.
         """
 
         assert num_hash_funct > 1, num_hash_funct
         assert num_hash_col > 1, num_hash_col
-        assert rand_mode in ['PNG', 'MOD'], rand_mode
+        assert rand_mode in ['PNG', 'SHA'], rand_mode
 
         self.num_hash_funct = num_hash_funct
         self.num_hash_col = num_hash_col
