@@ -20,7 +20,7 @@ def q_gram_dice_sim(q_gram_set1, q_gram_set2):
     num_common_q_gram = len(q_gram_set1.intersection(q_gram_set2))
 
     q_gram_dice = (2.0 * num_common_q_gram) / \
-                      (len(q_gram_set1) + len(q_gram_set2))
+                  (len(q_gram_set1) + len(q_gram_set2))
 
     return q_gram_dice
 
@@ -72,9 +72,10 @@ def make_inds(i_vals, numex):
         tmp2 = []
         for j in range(i + 1, numex):
             tmp2.append(np.array([i, j], dtype=np.uint32))
-        if len(tmp2)>0:
+        if len(tmp2) > 0:
             tmp1.append(np.vstack(tmp2))
     return np.vstack(tmp1, dtype=np.uint32)
+
 
 class TSHEncoder():
     """A class that implements a column-based vector hashing approach for PPRL
@@ -108,7 +109,7 @@ class TSHEncoder():
         self.num_hash_col = num_hash_col
         self.rand_mode = rand_mode
         self.ngram_size = ngram_size
-        self.range_p = 2*((2**num_hash_funct)-1)
+        self.range_p = 2 * ((2 ** num_hash_funct) - 1)
         if seed is not None:
             np.random.seed(seed=seed)
         self.hash_separators = np.random.randint(0, 2 ** 16, size=num_hash_funct).astype(str)
@@ -118,7 +119,7 @@ class TSHEncoder():
 
     # ---------------------------------------------------------------------------
 
-    def encode(self, q_gram_set):
+    def __encode(self, data):
         """Apply column-based vector hashing on the given input q-gram set and
            generate a hash value set which is returned.
 
@@ -129,11 +130,15 @@ class TSHEncoder():
              - hash_set  A set of hash values representing the q-gram set.
         """
 
+        concat_lower = "".join(data).replace(" ", "").lower()
+        # Split each string in the data into a list of qgrams to process
+        q_gram_set = [concat_lower[i:i + self.ngram_size] for i in range(len(concat_lower) - self.ngram_size + 1)]
+
         hash_bitarray = np.zeros((self.num_hash_funct, self.num_hash_col), np.uint8)
 
         for q in q_gram_set:
             for hash_ind, sep in enumerate(self.hash_separators):
-                hash_str = q+sep
+                hash_str = q + sep
                 hash_bitarray[hash_ind, int(sha256(hash_str.encode()).hexdigest(), 16) % self.num_hash_col] = 1
 
         hash_set = list()
@@ -149,8 +154,8 @@ class TSHEncoder():
                 rand_min = (col_index - 1) * self.range_p
                 rand_max = col_index * self.range_p - 1
 
-                #rand_min = col_index * (2 ** self.num_hash_funct)
-                #rand_max = rand_min + (2 ** self.num_hash_funct)
+                # rand_min = col_index * (2 ** self.num_hash_funct)
+                # rand_max = rand_min + (2 ** self.num_hash_funct)
 
                 random.seed(hash_str)
                 hash_val = random.randint(rand_min, rand_max)
@@ -160,18 +165,20 @@ class TSHEncoder():
 
         return set(hash_set)
 
+    def encode(self, data):
+        if type(data[0]) == list:
+            return [self.__encode(d) for d in data]
+        else:
+            return self.__encode(data)
+
     def encode_and_compare(self, data, uids, metric, sim=True):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         numex = len(uids)
         uids = np.array(uids, dtype=np.float32)
 
-        data = ["".join(d).replace(" ", "").lower() for d in data]
-        # Split each string in the data into a list of qgrams to process
-        data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
-
         parallel = Parallel(n_jobs=self.workers)
-        output_generator = parallel(delayed(self.encode)(i) for i in data)
+        output_generator = parallel(delayed(self.__encode)(i) for i in data)
         cache = {}
         for i, enc in enumerate(output_generator):
             cache[uids[i]] = enc
@@ -181,7 +188,7 @@ class TSHEncoder():
         output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex),
                                                                                          self.workers))
         inds = np.vstack(output_generator)
-        numinds  = len(inds)
+        numinds = len(inds)
         inds = np.array_split(inds, self.workers)
         gc.collect()
 
@@ -191,7 +198,7 @@ class TSHEncoder():
         gc.collect()
         re = np.zeros((numinds, 3), dtype=np.float32)
 
-        re[:,2] = pw_metrics
+        re[:, 2] = pw_metrics
         del pw_metrics
         gc.collect()
 
@@ -200,11 +207,11 @@ class TSHEncoder():
             end = start + len(ind)
             ind[:, 0] = uids[ind[:, 0]]
             ind[:, 1] = uids[ind[:, 1]]
-            re[start:end,0:2] = ind
+            re[start:end, 0:2] = ind
             start += len(ind)
         del inds, uids
         gc.collect()
-        #...and add the metrics
+        # ...and add the metrics
         return re
 
     def encode_records(self, data, uids):
