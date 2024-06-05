@@ -119,7 +119,7 @@ class TSHEncoder():
 
     # ---------------------------------------------------------------------------
 
-    def __encode(self, data):
+    def enc(self, data):
         """Apply column-based vector hashing on the given input q-gram set and
            generate a hash value set which is returned.
 
@@ -167,9 +167,9 @@ class TSHEncoder():
 
     def encode(self, data):
         if type(data[0]) == list:
-            return [self.__encode(d) for d in data]
+            return [self.enc(d) for d in data]
         else:
-            return self.__encode(data)
+            return self.enc(data)
 
     def encode_and_compare(self, data, uids, metric, sim=True):
         available_metrics = ["jaccard", "dice"]
@@ -178,7 +178,7 @@ class TSHEncoder():
         uids = np.array(uids, dtype=np.float32)
 
         parallel = Parallel(n_jobs=self.workers)
-        output_generator = parallel(delayed(self.__encode)(i) for i in data)
+        output_generator = parallel(delayed(self.enc)(i) for i in data)
         cache = {}
         for i, enc in enumerate(output_generator):
             cache[uids[i]] = enc
@@ -213,19 +213,3 @@ class TSHEncoder():
         gc.collect()
         # ...and add the metrics
         return re
-
-    def encode_records(self, data, uids):
-
-        data = ["".join(d).replace(" ", "").lower() for d in data]
-        # Split each string in the data into a list of qgrams to process
-        data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
-
-        parallel = Parallel(n_jobs=self.workers)
-        output_generator = parallel(delayed(self.encode)(i) for i in data)
-        cache = {}
-        for i, enc in enumerate(output_generator):
-            cache[uids[i]] = enc
-        del output_generator, data
-        gc.collect()
-
-        return cache
