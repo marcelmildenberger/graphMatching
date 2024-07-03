@@ -78,16 +78,11 @@ class GaleShapleyMatcher():
 
         return pair
     def match(self, alice_data, alice_uids, eve_data, eve_uids):
-        if len(alice_uids) <= len(eve_uids):
-            smaller_data = alice_data
-            larger_data = eve_data
-            smaller_uids = alice_uids
-            larger_uids = eve_uids
-        else:
-            smaller_data = eve_data
-            larger_data = alice_data
-            smaller_uids = eve_uids
-            larger_uids = alice_uids
+        smaller_data = alice_data if len(alice_uids) < len(eve_uids) else eve_data
+        larger_data = alice_data if len(alice_uids) >= len(eve_uids) else eve_data
+
+        smaller_uids = alice_uids if len(alice_uids) < len(eve_uids) else eve_uids
+        larger_uids = alice_uids if len(alice_uids) >= len(eve_uids) else eve_uids
 
         pw_dists = pairwise_distances(smaller_data, larger_data, metric=self.metric, n_jobs=self.workers)
         smaller_nodes = ["S_" + str(k) for k in smaller_uids]
@@ -103,7 +98,9 @@ class GaleShapleyMatcher():
             for smaller_ind in range(len(pw_dists)):
                 tmp["S_" + str(smaller_uids[smaller_ind])] = pw_dists[smaller_ind][larger_ind]
             larger_rank["L_" + str(larger_uids[larger_ind])] = tmp
-        return self.__gale_shapley(A=set(smaller_nodes), B=set(larger_nodes), A_pref=smaller_pref, B_rank=larger_rank)
+        matching = self.__gale_shapley(A=set(smaller_nodes), B=set(larger_nodes), A_pref=smaller_pref, B_rank=larger_rank)
+        # Swap keys and values to ensure consistency with other matchers
+        return dict((v,k) for k,v in matching.items())
 
 
 class SymmetricMatcher():
@@ -118,20 +115,27 @@ class SymmetricMatcher():
         self.workers = workers
 
     def match(self, alice_data, alice_uids, eve_data, eve_uids):
+
+        smaller_data = alice_data if len(alice_uids) < len(eve_uids) else eve_data
+        larger_data = alice_data if len(alice_uids) >= len(eve_uids) else eve_data
+
+        smaller_uids = alice_uids if len(alice_uids) < len(eve_uids) else eve_uids
+        larger_uids = alice_uids if len(alice_uids) >= len(eve_uids) else eve_uids
+
         pw_dists = pairwise_distances(alice_data, eve_data, metric=self.metric, n_jobs=self.workers)
-        alice_pref = {}
-        for alice_ind in range(len(pw_dists)):
-            tmp = ["L_" + str(x) for _, x in sorted(zip(list(pw_dists[alice_ind]), eve_uids))]
-            alice_pref["S_" + str(alice_uids[alice_ind])] = tmp[0]
+        larger_pref = {}
+        for larger_ind in range(pw_dists.shape[0]):
+            tmp = ["S_" + str(x) for _, x in sorted(zip(list(pw_dists[larger_ind]), smaller_uids))]
+            larger_pref["L_" + str(larger_uids[larger_ind])] = tmp[0]
 
         pw_dists = np.transpose(pw_dists)
-        eve_pref = {}
-        for eve_ind in range(len(pw_dists)):
-            tmp = ["S_" + str(x) for _, x in sorted(zip(list(pw_dists[eve_ind]), alice_uids))]
-            eve_pref["L_" + str(eve_uids[eve_ind])] = tmp[0]
+        smaller_pref = {}
+        for smaller_ind in range(len(pw_dists)):
+            tmp = ["L_" + str(x) for _, x in sorted(zip(list(pw_dists[smaller_ind]), larger_uids))]
+            smaller_pref["S_" + str(smaller_uids[smaller_ind])] = tmp[0]
 
         matching = {}
-        for a, e in alice_pref.items():
-            if eve_pref[e] == a:
-                matching[e] = a
+        for s, l in smaller_pref.items():
+            if larger_pref[l] == s:
+                matching[s] = l
         return matching
