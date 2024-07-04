@@ -122,15 +122,16 @@ class SymmetricMatcher():
         smaller_uids = alice_uids if len(alice_uids) < len(eve_uids) else eve_uids
         larger_uids = alice_uids if len(alice_uids) >= len(eve_uids) else eve_uids
 
-        pw_dists = pairwise_distances(alice_data, eve_data, metric=self.metric, n_jobs=self.workers)
+        pw_dists = pairwise_distances(larger_data, smaller_data, metric=self.metric, n_jobs=self.workers)
         larger_pref = {}
+
         for larger_ind in range(pw_dists.shape[0]):
             tmp = ["S_" + str(x) for _, x in sorted(zip(list(pw_dists[larger_ind]), smaller_uids))]
             larger_pref["L_" + str(larger_uids[larger_ind])] = tmp[0]
 
         pw_dists = np.transpose(pw_dists)
         smaller_pref = {}
-        for smaller_ind in range(len(pw_dists)):
+        for smaller_ind in range(pw_dists.shape[0]):
             tmp = ["L_" + str(x) for _, x in sorted(zip(list(pw_dists[smaller_ind]), larger_uids))]
             smaller_pref["S_" + str(smaller_uids[smaller_ind])] = tmp[0]
 
