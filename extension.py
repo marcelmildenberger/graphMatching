@@ -335,8 +335,8 @@ for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_
 
     guessed_ref = len(refined_guess)
     tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
-    precision_ref = tp / len(refined_guess)
-    recall_ref = tp / ground_truth
+    precision_ref = tp_ref / len(refined_guess)
+    recall_ref = tp_ref / ground_truth
     if (precision_ref + recall_ref) > 0:
         f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
     else:
