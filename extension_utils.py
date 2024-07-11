@@ -1,4 +1,5 @@
 import csv
+import math
 from typing import Sequence
 from copy import deepcopy
 import numpy as np
@@ -55,7 +56,7 @@ def dice(a, b):
 
 
 def jaccard(a, b):
-    return a.intersection(b) / ((len(a) + len(b)) - a.intersection(b))
+    return a.intersection(b) / ((len(a) + len(b)) - len(a.intersection(b)))
 
 
 def est_bf_elements(bf, k):
@@ -92,7 +93,7 @@ def pairwise_jaccard(setlist_a, setlist_b):
     i = 0
     for set_a in setlist_a:
         for set_b in setlist_b:
-            sims[0][i] = dice(set_a, set_b)
+            sims[0][i] = jaccard(set_a, set_b)
             i += 1
     return sims
 
@@ -120,7 +121,7 @@ def jacc_sim(arr_a, arr_b):
     return float(size_intersection / size_union)
 
 
-def pairwise_dice_tmh(arrlist_a, arrlist_b, onebit=True):
+def pairwise_jacc_tmh(arrlist_a, arrlist_b, onebit=True):
     if onebit:
         simfunc = est_1bit_jacc
     else:
