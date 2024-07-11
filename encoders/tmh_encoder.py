@@ -164,6 +164,7 @@ class TMHEncoder():
                 tmpdict[str(int(key))] = val
             with open("./data/encodings/encoding_dict.pck", "wb") as f:
                 pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
+            del tmpdict
 
         numex = len(uids)
         output_generator = parallel(
