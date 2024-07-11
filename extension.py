@@ -1,23 +1,26 @@
 from extension_utils import *
 from collections import Counter
 import pickle
+import os
 import numpy as np
+import time
+from statistics import mean, median
 from main import run
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from sklearn.metrics import pairwise_distances
 
 GLOBAL_CONFIG = {
-        "Data": "./data/fakename_10k.tsv",
-        "Overlap": 0.8,
-        "DropFrom": "Eve",
-        "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
-        "BenchMode": False,  # Benchmark Mode
-        "Verbose": True,  # Print Status Messages?
-        "MatchingMetric": "cosine",
-        "Matching": "MinWeight",
-        "Workers": -1,
-        "SaveAliceEncs": True,
-        "SaveEveEncs": False
+    "Data": "./data/fakename_10k.tsv",
+    "Overlap": 0.8,
+    "DropFrom": "Eve",
+    "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
+    "BenchMode": True,  # Benchmark Mode
+    "Verbose": False,  # Print Status Messages?
+    "MatchingMetric": "cosine",
+    "Matching": "MinWeight",
+    "Workers": -1,
+    "SaveAliceEncs": True,
+    "SaveEveEncs": False
 }
 
 ENC_CONFIG = {
@@ -75,25 +78,25 @@ EMB_CONFIG = {
     # For Node2Vec
     "AliceWalkLen": 100,
     "AliceNWalks": 20,
-    "AliceP": 250, #0.5
-    "AliceQ": 300,    #2z
+    "AliceP": 250,  # 0.5
+    "AliceQ": 300,  # 2z
     "AliceEpochs": 5,
     "AliceSeed": 42,
     "EveWalkLen": 100,
     "EveNWalks": 20,
-    "EveP": 250, #0.5
-    "EveQ": 300, #2
+    "EveP": 250,  # 0.5
+    "EveQ": 300,  # 2
     "EveEpochs": 5,
     "EveSeed": 42
 }
 
 ALIGN_CONFIG = {
-    "RegWS": max(0.1, GLOBAL_CONFIG["Overlap"]/2), #0005
-    "RegInit":1, # For BF 0.25
-    "Batchsize": 1, # 1 = 100%
+    "RegWS": max(0.1, GLOBAL_CONFIG["Overlap"] / 2),  # 0005
+    "RegInit": 1,  # For BF 0.25
+    "Batchsize": 1,  # 1 = 100%
     "LR": 200.0,
     "NIterWS": 20,
-    "NIterInit": 5 ,  # 800
+    "NIterInit": 5,  # 800
     "NEpochWS": 100,
     "LRDecay": 0.999,
     "Sqrt": True,
@@ -113,7 +116,6 @@ del data
 
 with open("./data/encodings/encoding_dict.pck", "rb") as f:
     enc_dict = pickle.load(f)
-
 
 known_uids = []
 known_data = []
@@ -140,17 +142,18 @@ unknown_alice_encs = [enc_dict[i] for i in unknown_uids]
 plaintext_lengths = [len(p) for p in known_plaintexts]
 maxlen = max(plaintext_lengths)
 minlen = min(plaintext_lengths)
-avglen = sum(plaintext_lengths)/len(plaintext_lengths)
-verbose = False
+avglen = sum(plaintext_lengths) / len(plaintext_lengths)
 
 simple = []
 refined = []
 
+start_total = time.time()
+
 for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_encs)):
     # if u_ind < 88:
     #    continue
-    # if verbose:
-    print("___________________________")
+    if GLOBAL_CONFIG["Verbose"]:
+        print("___________________________")
     # included_ngr = set()
 
     # not_included_ngr = set()
@@ -193,13 +196,14 @@ for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_
 
     # TMH mit incl_ngr statt orig_incl
     not_included_ngr = guess_zero_overlap(target_sims, known_plaintexts, included_ngr=orig_incl_ngr,
-                                          not_included_ngr=not_included_ngr, perc=1, verbose=verbose, avglen=avglen)
+                                          not_included_ngr=not_included_ngr, perc=1,
+                                          verbose=GLOBAL_CONFIG["Verbose"], avglen=avglen)
 
     not_included_ngr = not_included_ngr.difference(init_guess_incl)
     # cntr = Counter(init_guess_list)
     # init_guess_incl = set([s[0] for s in cntr.most_common(10)])
 
-    if verbose:
+    if GLOBAL_CONFIG["Verbose"]:
         print("Guessed %i not included N-Grams" % (len(not_included_ngr)))
         if len(not_included_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
             wrong_not_incl = not_included_ngr.intersection(unknown_plaintexts[u_ind])
@@ -229,7 +233,7 @@ for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_
             est_overlap = round((jacc * (kp_len + avglen) / (jacc + 1)))
             est_overlaps[i] = est_overlap
 
-            if verbose:
+            if GLOBAL_CONFIG["Verbose"]:
                 gt = kp.intersection(unknown_plaintexts[u_ind])
                 print("Guessed overlap of %i, True %i" % (est_overlap, len(gt)))
             # Find n-grams that are potentially part of the unknown string
@@ -251,7 +255,7 @@ for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_
                 # to_add = set([n for n in to_add if n[0] in last_letters or n[1] in first_letters])
                 high_sim_ngr += list(to_add)
                 included_ngr = included_ngr.union(to_add)
-                if verbose and len(new_incl) > 0:
+                if GLOBAL_CONFIG["Verbose"] and len(new_incl) > 0:
                     print("Found %i possibly included n-grams, %i of them new" % (len(to_add), len(new_incl)))
                     if len(to_add.difference(unknown_plaintexts[u_ind])) > 0:
                         print("Wrongly included %s" % (to_add.difference(unknown_plaintexts[u_ind])))
@@ -263,7 +267,7 @@ for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_
                 new_excl = poss_excl_ngr.difference(not_included_ngr)
                 not_included_ngr = not_included_ngr.union(poss_excl_ngr)
 
-                if verbose and len(new_excl) > 0:
+                if GLOBAL_CONFIG["Verbose"] and len(new_excl) > 0:
                     print("Found %i possibly excluded n-grams, %i of them new" % (len(poss_excl_ngr), len(new_excl)))
                     if len(poss_excl_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
                         print("Wrongly excluded %s" % (poss_excl_ngr.intersection(unknown_plaintexts[u_ind])))
@@ -278,8 +282,10 @@ for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_
         f1 = 2 * ((precision * recall) / (precision + recall))
     else:
         tp = precision = recall = f1 = 0
-    print("Found %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f" % (
-    tp, ground_truth, precision, recall, f1))
+    if GLOBAL_CONFIG["Verbose"]:
+        print("Found %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f" % (
+            tp, ground_truth, precision, recall, f1))
+    guessed = len(included_ngr)
     simple.append((u_ind, tp, ground_truth, precision, recall, f1))
 
     jacc_err = float("Inf")
@@ -327,25 +333,107 @@ for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_
                 new_guess_list.append(guess_list[inds_by_je[i]])
             guess_list = new_guess_list
 
-        tp = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
-        precision = tp / len(refined_guess)
-        recall = tp / ground_truth
-        if (precision + recall) > 0:
-            f1 = 2 * ((precision * recall) / (precision + recall))
-        else:
-            f1 = 0
+    guessed_ref = len(refined_guess)
+    tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
+    precision_ref = tp / len(refined_guess)
+    recall_ref = tp / ground_truth
+    if (precision_ref + recall_ref) > 0:
+        f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
+    else:
+        f1_ref = 0
 
-    #bench_keys = ["Dataset", "Overlap", ]
-
-    #bench_vals = vals = [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
+    # bench_vals = vals = [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
     #         elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping,
     #         elapsed_relevant]
 
-    #if not os.path.isfile("data/extension_benchmark.tsv"):
-    #    save_tsv([keys], "data/extension_benchmark.tsv")
 
-    #save_tsv([vals], "data/extension_benchmark.tsv", mode="a")
 
-    print("--- REFINED GUESS ---\nFound %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f \nTrue: %s" % (
-    tp, ground_truth, precision, recall, f1, unknown_data[u_ind]))
-    refined.append((u_ind, tp, ground_truth, precision, recall, f1))
+    if GLOBAL_CONFIG["Verbose"]:
+        print("--- REFINED GUESS ---\nFound %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f \nTrue: %s" % (
+            tp_ref, ground_truth, precision_ref, recall_ref, f1_ref, unknown_data[u_ind]))
+
+    refined.append((u_ind, tp_ref, ground_truth, precision_ref, recall_ref, f1_ref))
+
+    elapsed_total = time.time() - start_total
+    if GLOBAL_CONFIG["BenchMode"]:
+        bench_keys = ["timestamp"]
+        bench_vals = [time.time()]
+        for key, val in EMB_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+        for key, val in ENC_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+        for key, val in GLOBAL_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+        for key, val in ALIGN_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+        bench_keys += ["Duration", "TrueNgrams", "GuessedNgrams", "TP", "Precision", "Recall", "F1",
+                       "GuessedNgramsRefined", "TPRefined", "PrecisionRefined", "RecallRefined", "F1Refined"]
+
+        bench_vals += [elapsed_total, ground_truth, guessed, tp, precision, recall, f1, guessed_ref, tp_ref,
+                 precision_ref, recall_ref, f1_ref]
+
+
+    if not os.path.isfile("data/extension_benchmark.tsv"):
+        save_tsv([bench_keys], "data/extension_benchmark.tsv")
+
+    save_tsv([bench_vals], "data/extension_benchmark.tsv", mode="a")
+
+
+simple_precs = [s[3] for s in simple]
+simple_recs = [s[4] for s in simple]
+simple_f1 = [s[5] for s in simple]
+
+ref_precs = [r[3] for r in refined]
+ref_recs = [r[4] for r in refined]
+ref_f1 = [r[5] for r in refined]
+
+report_string = """---- ATTACK SUMMARY ----
+
+**** Simple Guessing ****
+
+Minimum Precision: %0.4f
+Maximum Precision: %0.4f
+Average Precision: %0.4f
+Median Precision:  %0.4f
+
+Minimum Recall: %0.4f
+Maximum Recall: %0.4f
+Average Recall: %0.4f
+Median Recall:  %0.4f
+
+Minimum F1: %0.4f
+Maximum F1: %0.4f
+Average F1: %0.4f
+Median F1:  %0.4f
+
+**** Refined Guessing ****
+
+Minimum Precision: %0.4f
+Maximum Precision: %0.4f
+Average Precision: %0.4f
+Median Precision:  %0.4f
+
+Minimum Recall: %0.4f
+Maximum Recall: %0.4f
+Average Recall: %0.4f
+Median Recall:  %0.4f
+
+Minimum F1: %0.4f
+Maximum F1: %0.4f
+Average F1: %0.4f
+Median F1:  %0.4f
+
+---- Attack completed after %i seconds. ----
+"""
+print(report_string % (min(simple_precs), max(simple_precs), mean(simple_precs), median(simple_precs),
+min(simple_recs), max(simple_recs), mean(simple_recs), median(simple_recs),
+min(simple_f1), max(simple_f1), mean(simple_f1), median(simple_f1),
+
+min(ref_precs), max(ref_precs), mean(ref_precs), median(ref_precs),
+min(ref_recs), max(ref_recs), mean(ref_recs), median(ref_recs),
+min(ref_f1), max(ref_f1), mean(ref_f1), median(ref_f1),
+elapsed_total))
