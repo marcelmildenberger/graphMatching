@@ -61,14 +61,11 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # not_included_ngr = set()
 
-        # target_sims = calc_sims(u, known_data, q_gram_dice_sim)
         if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
             tmp = pairwise_distances(u_enc.reshape(1, -1), known_alice_encs, metric="jaccard")
             tmp = 1 - tmp
-            # target_sims = list(reg.predict(tmp.reshape(-1, 1)).flatten())
         elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
-            tmp = pairwise_dice_tmh(u_enc, known_alice_encs, ENC_CONFIG["Alice1BitHash"])
-            # target_sims = list(tmp[0])
+            tmp = pairwise_jacc_tmh(u_enc, known_alice_encs, ENC_CONFIG["Alice1BitHash"])
         else:
             tmp = pairwise_dice(u_enc, known_alice_encs)
 
@@ -103,8 +100,6 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                               verbose=GLOBAL_CONFIG["Verbose"], avglen=avglen)
 
         not_included_ngr = not_included_ngr.difference(init_guess_incl)
-        # cntr = Counter(init_guess_list)
-        # init_guess_incl = set([s[0] for s in cntr.most_common(10)])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Guessed %i not included N-Grams" % (len(not_included_ngr)))
@@ -145,17 +140,10 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                 # Find n-grams that are definitely part of both, the known and the unknown string
                 known_intersect = kp.intersection(included_ngr)
 
-                # first_letters = set([n[0] for n in included_ngr])
-                # last_letters = set([n[-1] for n in included_ngr])
 
                 if len(kp.difference(not_included_ngr.union(known_intersect))) == est_overlap - len(known_intersect):
                     to_add = kp.difference(not_included_ngr)
-                    # add_graph = buildgraph(list(to_add))
-                    # add_possibilities = [''.join(sent) for sent in allsentences(deepcopy(add_graph), 2, 30)]
-                    # add_possibilities.sort(key=len)
-                    # add_possibilities.reverse()
                     new_incl = to_add.difference(included_ngr)
-                    # to_add = set([n for n in to_add if n[0] in last_letters or n[1] in first_letters])
                     high_sim_ngr += list(to_add)
                     included_ngr = included_ngr.union(to_add)
                     if GLOBAL_CONFIG["Verbose"] and len(new_incl) > 0:
@@ -174,8 +162,6 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                         print("Found %i possibly excluded n-grams, %i of them new" % (len(poss_excl_ngr), len(new_excl)))
                         if len(poss_excl_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
                             print("Wrongly excluded %s" % (poss_excl_ngr.intersection(unknown_plaintexts[u_ind])))
-
-            # not_included_ngr = guess_zero_overlap(target_sims, known_plaintexts, included_ngr=included_ngr, not_included_ngr=not_included_ngr, perc=1, verbose=verbose, avglen=avglen)
 
         ground_truth = len(unknown_plaintexts[u_ind])
         if len(included_ngr) > 0:
@@ -296,41 +282,41 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     report_string = """---- ATTACK SUMMARY ----
     
-    **** Simple Guessing ****
-    
-    Minimum Precision: %0.4f
-    Maximum Precision: %0.4f
-    Average Precision: %0.4f
-    Median Precision:  %0.4f
-    
-    Minimum Recall: %0.4f
-    Maximum Recall: %0.4f
-    Average Recall: %0.4f
-    Median Recall:  %0.4f
-    
-    Minimum F1: %0.4f
-    Maximum F1: %0.4f
-    Average F1: %0.4f
-    Median F1:  %0.4f
-    
-    **** Refined Guessing ****
-    
-    Minimum Precision: %0.4f
-    Maximum Precision: %0.4f
-    Average Precision: %0.4f
-    Median Precision:  %0.4f
-    
-    Minimum Recall: %0.4f
-    Maximum Recall: %0.4f
-    Average Recall: %0.4f
-    Median Recall:  %0.4f
-    
-    Minimum F1: %0.4f
-    Maximum F1: %0.4f
-    Average F1: %0.4f
-    Median F1:  %0.4f
-    
-    ---- Attack completed after %i seconds (%0.2f Minutes). ----
+**** Simple Guessing ****
+
+Minimum Precision: %0.4f
+Maximum Precision: %0.4f
+Average Precision: %0.4f
+Median Precision:  %0.4f
+
+Minimum Recall: %0.4f
+Maximum Recall: %0.4f
+Average Recall: %0.4f
+Median Recall:  %0.4f
+
+Minimum F1: %0.4f
+Maximum F1: %0.4f
+Average F1: %0.4f
+Median F1:  %0.4f
+
+**** Refined Guessing ****
+
+Minimum Precision: %0.4f
+Maximum Precision: %0.4f
+Average Precision: %0.4f
+Median Precision:  %0.4f
+
+Minimum Recall: %0.4f
+Maximum Recall: %0.4f
+Average Recall: %0.4f
+Median Recall:  %0.4f
+
+Minimum F1: %0.4f
+Maximum F1: %0.4f
+Average F1: %0.4f
+Median F1:  %0.4f
+
+---- Attack completed after %i seconds (%0.2f Minutes). ----
     """
     print(report_string % (min(simple_precs), max(simple_precs), mean(simple_precs), median(simple_precs),
     min(simple_recs), max(simple_recs), mean(simple_recs), median(simple_recs),
