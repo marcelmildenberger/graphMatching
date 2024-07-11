@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import os
 import gc
@@ -87,9 +89,7 @@ class NonEncoder():
         self.verbose = verbose
         self.workers = os.cpu_count() if workers == -1 else workers
 
-
-
-    def encode_and_compare(self, data, uids, metric, sim=True):
+    def encode_and_compare(self, data, uids, metric, sim=True, store_encs = False):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         numex = len(uids)
@@ -103,6 +103,11 @@ class NonEncoder():
             cache[uids[i]] = enc
         del output_generator, data
         gc.collect()
+
+        if store_encs:
+            with open("./data/encodings/encoding_dict.pck", "wb") as f:
+                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+
         output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers))
 
         inds = np.vstack(output_generator)
