@@ -105,8 +105,13 @@ class NonEncoder():
         gc.collect()
 
         if store_encs:
+            tmpdict = dict()
+
+            for key, val in cache.items():
+                tmpdict[str(int(key))] = val
             with open("./data/encodings/encoding_dict.pck", "wb") as f:
-                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+                pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
+            del tmpdict
 
         output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers))
 
