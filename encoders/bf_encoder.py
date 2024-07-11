@@ -1,5 +1,6 @@
 # Encodes a given using bloom filters for PPRL
 import gc
+import pickle
 from typing import Sequence, AnyStr, List, Tuple, Any
 from .encoder import Encoder
 import numpy as np
@@ -155,7 +156,7 @@ class BFEncoder(Encoder):
         return enc_data
 
     def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
-                           metric: str, sim: bool = True) -> np.ndarray:
+                           metric: str, sim: bool = True, store_encs: bool = False) -> np.ndarray:
         """
         Encodes the given data using bloom filter encoding (CLKHash), then computes and returns the pairwise
         similarities/distances of the bloom filters as a list of tuples.
@@ -174,7 +175,14 @@ class BFEncoder(Encoder):
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
         #print("DEB: Encoding")
+        data = [["".join(d).lower()] for d in data]
         enc = self.encode(data)
+
+        if store_encs:
+            cache = dict(zip(uids, enc))
+            with open("./data/encodings/encoding_dict.pck", "wb") as f:
+                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+
         # Calculates pairwise distances between the provided data points
         if sim:
             vals = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1)

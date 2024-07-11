@@ -1,5 +1,6 @@
 import os
 import hashlib
+import pickle
 import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
@@ -143,7 +144,7 @@ class TMHEncoder():
             hashes[i] = self.hash_qgrams(qg)
         return hashes
 
-    def encode_and_compare(self, data, uids, metric, sim=True):
+    def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         uids = [float(u) for u in uids]
@@ -156,10 +157,15 @@ class TMHEncoder():
         for i, enc in tqdm(enumerate(output_generator), desc="Encoding", disable=not self.verbose, total=len(uids)):
             cache[uids[i]] = enc
         del output_generator
+        if store_encs:
+            with open("./data/encodings/encoding_dict.pck", "wb") as f:
+                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+
         numex = len(uids)
         output_generator = parallel(
             delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers * 4))
         inds = np.vstack(output_generator)
         inds = np.array_split(inds, self.workers)
         pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim, self.one_bit_hash) for i in inds)
+        del cache
         return np.vstack(pw_metrics)
