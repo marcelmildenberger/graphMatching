@@ -158,8 +158,12 @@ class TMHEncoder():
             cache[uids[i]] = enc
         del output_generator
         if store_encs:
+            tmpdict = dict()
+
+            for key, val in cache.items():
+                tmpdict[str(int(key))] = val
             with open("./data/encodings/encoding_dict.pck", "wb") as f:
-                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+                pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
 
         numex = len(uids)
         output_generator = parallel(
