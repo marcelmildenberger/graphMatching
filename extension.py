@@ -70,8 +70,6 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             tmp = pairwise_dice(u_enc, known_alice_encs)
 
         target_sims = list(tmp[0])
-        tm = min(target_sims)
-        # target_sims = [t - (tm) for t in target_sims]
 
         asc_sim_inds = np.argsort(target_sims)
         ordered_sim_inds = np.flip(asc_sim_inds)
@@ -109,20 +107,14 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         incl_size_before = float("-Inf")
         excl_size_before = float("-Inf")
-        guess = ""
 
         est_overlaps = {}
-
-        # ordered_sim_inds = np.flip(ordered_sim_inds)
 
         while (len(included_ngr) - incl_size_before) > 0 or (len(not_included_ngr) - excl_size_before) > 0:
             incl_size_before = len(included_ngr)
             excl_size_before = len(not_included_ngr)
 
-            low_sim_ngr = []
-            low_sim_count = 0
             high_sim_ngr = []
-            high_sim_count = 0
 
             for i in ordered_sim_inds:
                 kp = known_plaintexts[i]
@@ -135,7 +127,7 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                     gt = kp.intersection(unknown_plaintexts[u_ind])
                     print("Guessed overlap of %i, True %i" % (est_overlap, len(gt)))
                 # Find n-grams that are potentially part of the unknown string
-                difference = kp.difference(not_included_ngr)
+                #difference = kp.difference(not_included_ngr)
 
                 # Find n-grams that are definitely part of both, the known and the unknown string
                 known_intersect = kp.intersection(included_ngr)
@@ -168,7 +160,10 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             tp = len(included_ngr.intersection(unknown_plaintexts[u_ind]))
             precision = tp / len(included_ngr)
             recall = tp / ground_truth
-            f1 = 2 * ((precision * recall) / (precision + recall))
+            if (precision + recall) > 0:
+                f1 = 2 * ((precision * recall) / (precision + recall))
+            else:
+                f1 = 0
         else:
             tp = precision = recall = f1 = 0
         if GLOBAL_CONFIG["Verbose"]:
@@ -223,18 +218,17 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                 guess_list = new_guess_list
 
         guessed_ref = len(refined_guess)
-        tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
-        precision_ref = tp_ref / len(refined_guess)
-        recall_ref = tp_ref / ground_truth
-        if (precision_ref + recall_ref) > 0:
-            f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
+        if len(refined_guess) > 0:
+            tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
+            precision_ref = tp_ref / len(refined_guess)
+            recall_ref = tp_ref / ground_truth
+
+            if (precision_ref + recall_ref) > 0:
+                f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
+            else:
+                f1_ref = 0
         else:
-            f1_ref = 0
-
-        # bench_vals = vals = [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
-        #         elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping,
-        #         elapsed_relevant]
-
+            tp_ref = precision_ref = recall_ref = f1_ref = 0
 
 
         if GLOBAL_CONFIG["Verbose"]:
@@ -243,35 +237,6 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         refined.append((u_ind, tp_ref, ground_truth, precision_ref, recall_ref, f1_ref))
 
-        elapsed_total = time.time() - start_total
-        if GLOBAL_CONFIG["BenchMode"]:
-            bench_keys = ["timestamp"]
-            bench_vals = [time.time()]
-            for key, val in EMB_CONFIG.items():
-                bench_keys.append(key)
-                bench_vals.append(val)
-            for key, val in ENC_CONFIG.items():
-                bench_keys.append(key)
-                bench_vals.append(val)
-            for key, val in GLOBAL_CONFIG.items():
-                bench_keys.append(key)
-                bench_vals.append(val)
-            for key, val in ALIGN_CONFIG.items():
-                bench_keys.append(key)
-                bench_vals.append(val)
-            bench_keys += ["Duration", "TrueNgrams", "GuessedNgrams", "TP", "Precision", "Recall", "F1",
-                           "GuessedNgramsRefined", "TPRefined", "PrecisionRefined", "RecallRefined", "F1Refined"]
-
-            bench_vals += [elapsed_total, ground_truth, guessed, tp, precision, recall, f1, guessed_ref, tp_ref,
-                     precision_ref, recall_ref, f1_ref]
-
-
-            if not os.path.isfile("data/extension_benchmark.tsv"):
-                save_tsv([bench_keys], "data/extension_benchmark.tsv")
-
-            save_tsv([bench_vals], "data/extension_benchmark.tsv", mode="a")
-
-
     simple_precs = [s[3] for s in simple]
     simple_recs = [s[4] for s in simple]
     simple_f1 = [s[5] for s in simple]
@@ -279,6 +244,46 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     ref_precs = [r[3] for r in refined]
     ref_recs = [r[4] for r in refined]
     ref_f1 = [r[5] for r in refined]
+
+    elapsed_total = time.time() - start_total
+    if GLOBAL_CONFIG["BenchMode"]:
+        bench_keys = ["timestamp"]
+        bench_vals = [time.time()]
+        for key, val in EMB_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+        for key, val in ENC_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+        for key, val in GLOBAL_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+        for key, val in ALIGN_CONFIG.items():
+            bench_keys.append(key)
+            bench_vals.append(val)
+
+        bench_keys += ["MinPrecision", "MaxPrecision","AvgPrecision", "MedPrecision", "MinRecall", "MaxRecall",
+                       "AvgRecall", "MedRecall", "MinF1", "MaxF1", "AvgF1", "MedF1", "MinPrecision_Ref",
+                       "MaxPrecision_Ref","AvgPrecision_Ref", "MedPrecision_Ref", "MinRecall_Ref", "MaxRecall_Ref",
+                       "AvgRecall_Ref", "MedRecall_Ref", "MinF1_Ref", "MaxF1_Ref", "AvgF1_Ref", "MedF1_Ref",
+                       "DuractionSec"]
+
+        bench_vals += [min(simple_precs), max(simple_precs), mean(simple_precs), median(simple_precs),
+        min(simple_recs), max(simple_recs), mean(simple_recs), median(simple_recs),
+        min(simple_f1), max(simple_f1), mean(simple_f1), median(simple_f1),
+
+        min(ref_precs), max(ref_precs), mean(ref_precs), median(ref_precs),
+        min(ref_recs), max(ref_recs), mean(ref_recs), median(ref_recs),
+        min(ref_f1), max(ref_f1), mean(ref_f1), median(ref_f1),
+        elapsed_total]
+
+
+        if not os.path.isfile("data/extension_benchmark.tsv"):
+            save_tsv([bench_keys], "data/extension_benchmark.tsv")
+
+        save_tsv([bench_vals], "data/extension_benchmark.tsv", mode="a")
+
+
 
     report_string = """---- ATTACK SUMMARY ----
     
@@ -343,7 +348,7 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "TabMinHash",
+        "AliceAlgo": None,
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
