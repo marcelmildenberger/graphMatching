@@ -143,3 +143,23 @@ class NonEncoder():
         gc.collect()
         #...and add the metrics
         return re
+
+
+    def get_encoding_dict(self, data, uids):
+        uids = np.array(uids, dtype=np.float32)
+
+        parallel = Parallel(n_jobs=self.workers)
+        output_generator = parallel(delayed(calc_ngram)(d, 2) for d in data)
+        cache = {}
+
+        for i, enc in enumerate(output_generator):
+            cache[uids[i]] = enc
+        del output_generator, data
+        gc.collect()
+
+        tmpdict = dict()
+
+        for key, val in cache.items():
+            tmpdict[str(int(key))] = val
+
+        return tmpdict

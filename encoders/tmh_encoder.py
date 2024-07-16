@@ -174,3 +174,22 @@ class TMHEncoder():
         pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim, self.one_bit_hash) for i in inds)
         del cache
         return np.vstack(pw_metrics)
+
+    def get_encoding_dict(self, data, uids):
+
+        uids = [float(u) for u in uids]
+        data = ["".join(d).replace(" ", "").lower() for d in data]
+        # Split each string in the data into a list of qgrams to process
+        data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
+        parallel = Parallel(n_jobs=self.workers)
+        output_generator = parallel(delayed(self.hash_qgrams)(i) for i in data)
+        cache = {}
+        for i, enc in tqdm(enumerate(output_generator), desc="Encoding", disable=not self.verbose, total=len(uids)):
+            cache[uids[i]] = enc
+        del output_generator
+        tmpdict = dict()
+
+        for key, val in cache.items():
+            tmpdict[str(int(key))] = val
+
+        return tmpdict
