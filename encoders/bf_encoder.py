@@ -223,3 +223,10 @@ class BFEncoder(Encoder):
         #...and add the metrics
         return re
 
+    def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
+
+        #print("DEB: Encoding")
+        data = [["".join(d).lower()] for d in data]
+        enc = self.encode(data)
+
+        return dict(zip(uids, enc))
