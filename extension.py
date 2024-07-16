@@ -1,26 +1,92 @@
-from extension_utils import *
-from collections import Counter
 import pickle
 import os
-import numpy as np
 import time
+import contextlib
+import joblib
+
 from statistics import mean, median
+from collections import Counter
 from main import run
-from tqdm import tqdm
+from tqdm import tqdm, trange
+from hashlib import md5
+from joblib import Parallel, delayed
 from sklearn.metrics import pairwise_distances
 
-def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
+from extension_utils import *
+from encoders.bf_encoder import BFEncoder
+from encoders.tmh_encoder import TMHEncoder
+from encoders.tsh_encoder import TSHEncoder
+from encoders.non_encoder import NonEncoder
 
-    mapping = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
+def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
+    #https://stackoverflow.com/a/58936697
+    @contextlib.contextmanager
+    def tqdm_joblib(tqdm_object):
+        """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+
+        class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+            def __call__(self, *args, **kwargs):
+                tqdm_object.update(n=self.batch_size)
+                return super().__call__(*args, **kwargs)
+
+        old_batch_callback = joblib.parallel.BatchCompletionCallBack
+        joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+        try:
+            yield tqdm_object
+        finally:
+            joblib.parallel.BatchCompletionCallBack = old_batch_callback
+            tqdm_object.close()
+
+
+    # Optimization: Store Encodings if parameters are unchanged
+    alice_enc_hash = md5(
+        ("%s-%s" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
 
     # Load dataset
     data, uids = read_tsv(GLOBAL_CONFIG["Data"])
     data = [["".join(d).lower()] for d in data]
     data_dict = dict(zip(uids, data))
-    del data
 
-    with open("./data/encodings/encoding_dict.pck", "rb") as f:
-        enc_dict = pickle.load(f)
+    if GLOBAL_CONFIG["RunGMA"]:
+        mapping = run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)
+        with open("./data/encodings/encoding_dict.pck", "rb") as f:
+            enc_dict = pickle.load(f)
+    else:
+
+        if os.path.isfile("./data/encodings/encoding_dict-%s.pck" % alice_enc_hash):
+
+            if GLOBAL_CONFIG["Verbose"]:
+                print("Will load stored encodings for better performance.")
+
+            with open("./data/encodings/encoding_dict-%s.pck" % alice_enc_hash, "rb") as f:
+                enc_dict = pickle.load(f)
+
+        else:
+            if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
+                alice_encoder = BFEncoder(ENC_CONFIG["AliceSecret"], ENC_CONFIG["AliceBFLength"],
+                                        ENC_CONFIG["AliceBits"], ENC_CONFIG["AliceN"], ENC_CONFIG["AliceDiffuse"],
+                                        ENC_CONFIG["AliceEldLength"], ENC_CONFIG["AliceT"])
+            elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
+                alice_encoder = TMHEncoder(ENC_CONFIG["AliceNHash"], ENC_CONFIG["AliceNHashBits"],
+                                        ENC_CONFIG["AliceNSubKeys"], ENC_CONFIG["AliceN"],
+                                        ENC_CONFIG["Alice1BitHash"],
+                                        random_seed=ENC_CONFIG["AliceSecret"], verbose=GLOBAL_CONFIG["Verbose"],
+                                            workers=GLOBAL_CONFIG["Workers"])
+            elif ENC_CONFIG["AliceAlgo"] == "TwoStepHash":
+                alice_encoder = TSHEncoder(ENC_CONFIG["AliceNHashFunc"], ENC_CONFIG["AliceNHashCol"], ENC_CONFIG["AliceN"],
+                                        ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
+                                        verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
+            else:
+                alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
+
+            enc_dict = alice_encoder.get_encoding_dict(data, uids)
+
+            with open("./data/encodings/encoding_dict-%s.pck" % alice_enc_hash, "wb") as f:
+                pickle.dump(enc_dict, f, pickle.HIGHEST_PROTOCOL)
+
+        mapping = simulate_mapping(uids, correct_share = GLOBAL_CONFIG["CorrectShare"],
+                                   matched_share=GLOBAL_CONFIG["Overlap"])
+    del data
 
     known_uids = []
     known_data = []
@@ -47,20 +113,11 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     plaintext_lengths = [len(p) for p in known_plaintexts]
     avglen = sum(plaintext_lengths) / len(plaintext_lengths)
 
-    simple = []
-    refined = []
-
     start_total = time.time()
 
-    for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_encs), disable=GLOBAL_CONFIG["Verbose"]):
-        # if u_ind < 88:
-        #    continue
-        if GLOBAL_CONFIG["Verbose"]:
-            print("___________________________")
-        # included_ngr = set()
+    ts_simdict = {}
 
-        # not_included_ngr = set()
-
+    for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_encs), disable=GLOBAL_CONFIG["Verbose"], desc="Sim Calculation"):
         if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
             tmp = pairwise_distances(u_enc.reshape(1, -1), known_alice_encs, metric="jaccard")
             tmp = 1 - tmp
@@ -69,173 +126,202 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         else:
             tmp = pairwise_dice(u_enc, known_alice_encs)
 
-        target_sims = list(tmp[0])
+        tmp = list(tmp[0])
+        ts_simdict[u_ind] = tmp
 
-        asc_sim_inds = np.argsort(target_sims)
-        ordered_sim_inds = np.flip(asc_sim_inds)
+    del u_ind, u_enc
 
-        init_guess_list = []
-        for i in range(10):
-            init_guess_list += list(known_plaintexts[ordered_sim_inds[i]])
+    def __extend(chunk, unknown_plaintexts, ts_simdict, GLOBAL_CONFIG):
+        relist_simple = []
+        relist_refined = []
 
-        cntr = Counter(init_guess_list)
-        included_ngr = set([s[0] for s in cntr.most_common(5)])
-        orig_incl_ngr = included_ngr
+        for u_ind in chunk:
 
-        init_guess_incl = set()
-        # TMH 6
-        for i in range(6):
-            init_guess_incl = init_guess_incl.union(known_plaintexts[ordered_sim_inds[i]])
+            if GLOBAL_CONFIG["Verbose"]:
+                print("___________________________")
 
-        not_included_ngr = set()
-        # TMH 100
-        for i in range(100):
-            not_included_ngr = not_included_ngr.union(known_plaintexts[asc_sim_inds[i]])
+            target_sims = ts_simdict[u_ind]
 
-        # TMH mit incl_ngr statt orig_incl
-        not_included_ngr = guess_zero_overlap(target_sims, known_plaintexts, included_ngr=orig_incl_ngr,
-                                              not_included_ngr=not_included_ngr, perc=1,
-                                              verbose=GLOBAL_CONFIG["Verbose"], avglen=avglen)
+            asc_sim_inds = np.argsort(target_sims)
+            ordered_sim_inds = np.flip(asc_sim_inds)
 
-        not_included_ngr = not_included_ngr.difference(init_guess_incl)
+            init_guess_list = []
+            for i in range(10):
+                init_guess_list += list(known_plaintexts[ordered_sim_inds[i]])
 
-        if GLOBAL_CONFIG["Verbose"]:
-            print("Guessed %i not included N-Grams" % (len(not_included_ngr)))
-            if len(not_included_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
-                wrong_not_incl = not_included_ngr.intersection(unknown_plaintexts[u_ind])
-                print("%i of them wrongly: %s" % (len(wrong_not_incl), str(wrong_not_incl)))
+            cntr = Counter(init_guess_list)
+            included_ngr = set([s[0] for s in cntr.most_common(5)])
+            orig_incl_ngr = included_ngr
 
-        incl_size_before = float("-Inf")
-        excl_size_before = float("-Inf")
+            init_guess_incl = set()
+            # TMH 6
+            for i in range(6):
+                init_guess_incl = init_guess_incl.union(known_plaintexts[ordered_sim_inds[i]])
 
-        est_overlaps = {}
+            not_included_ngr = set()
+            # TMH 100
+            for i in range(min(100, len(known_plaintexts))):
+                not_included_ngr = not_included_ngr.union(known_plaintexts[asc_sim_inds[i]])
 
-        while (len(included_ngr) - incl_size_before) > 0 or (len(not_included_ngr) - excl_size_before) > 0:
-            incl_size_before = len(included_ngr)
-            excl_size_before = len(not_included_ngr)
+            # TMH mit incl_ngr statt orig_incl
+            not_included_ngr = guess_zero_overlap(target_sims, known_plaintexts, included_ngr=orig_incl_ngr,
+                                                  not_included_ngr=not_included_ngr, perc=1,
+                                                  verbose=GLOBAL_CONFIG["Verbose"], avglen=avglen)
 
-            high_sim_ngr = []
+            not_included_ngr = not_included_ngr.difference(init_guess_incl)
 
-            for i in ordered_sim_inds:
-                kp = known_plaintexts[i]
-                kp_len = len(kp)
-                jacc = target_sims[i]
-                est_overlap = round((jacc * (kp_len + avglen) / (jacc + 1)))
-                est_overlaps[i] = est_overlap
+            if GLOBAL_CONFIG["Verbose"]:
+                print("Guessed %i not included N-Grams" % (len(not_included_ngr)))
+                if len(not_included_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
+                    wrong_not_incl = not_included_ngr.intersection(unknown_plaintexts[u_ind])
+                    print("%i of them wrongly: %s" % (len(wrong_not_incl), str(wrong_not_incl)))
 
-                if GLOBAL_CONFIG["Verbose"]:
-                    gt = kp.intersection(unknown_plaintexts[u_ind])
-                    print("Guessed overlap of %i, True %i" % (est_overlap, len(gt)))
-                # Find n-grams that are potentially part of the unknown string
-                #difference = kp.difference(not_included_ngr)
+            incl_size_before = float("-Inf")
+            excl_size_before = float("-Inf")
 
-                # Find n-grams that are definitely part of both, the known and the unknown string
-                known_intersect = kp.intersection(included_ngr)
+            est_overlaps = {}
+
+            while (len(included_ngr) - incl_size_before) > 0 or (len(not_included_ngr) - excl_size_before) > 0:
+                incl_size_before = len(included_ngr)
+                excl_size_before = len(not_included_ngr)
+
+                high_sim_ngr = []
+
+                for i in ordered_sim_inds:
+                    kp = known_plaintexts[i]
+                    kp_len = len(kp)
+                    jacc = target_sims[i]
+                    est_overlap = round((jacc * (kp_len + avglen) / (jacc + 1)))
+                    est_overlaps[i] = est_overlap
+
+                    if GLOBAL_CONFIG["Verbose"]:
+                        gt = kp.intersection(unknown_plaintexts[u_ind])
+                        print("Guessed overlap of %i, True %i" % (est_overlap, len(gt)))
+                    # Find n-grams that are potentially part of the unknown string
+                    #difference = kp.difference(not_included_ngr)
+
+                    # Find n-grams that are definitely part of both, the known and the unknown string
+                    known_intersect = kp.intersection(included_ngr)
 
 
-                if len(kp.difference(not_included_ngr.union(known_intersect))) == est_overlap - len(known_intersect):
-                    to_add = kp.difference(not_included_ngr)
-                    new_incl = to_add.difference(included_ngr)
-                    high_sim_ngr += list(to_add)
-                    included_ngr = included_ngr.union(to_add)
-                    if GLOBAL_CONFIG["Verbose"] and len(new_incl) > 0:
-                        print("Found %i possibly included n-grams, %i of them new" % (len(to_add), len(new_incl)))
-                        if len(to_add.difference(unknown_plaintexts[u_ind])) > 0:
-                            print("Wrongly included %s" % (to_add.difference(unknown_plaintexts[u_ind])))
+                    if len(kp.difference(not_included_ngr.union(known_intersect))) == est_overlap - len(known_intersect):
+                        to_add = kp.difference(not_included_ngr)
+                        new_incl = to_add.difference(included_ngr)
+                        high_sim_ngr += list(to_add)
+                        included_ngr = included_ngr.union(to_add)
+                        if GLOBAL_CONFIG["Verbose"] and len(new_incl) > 0:
+                            print("Found %i possibly included n-grams, %i of them new" % (len(to_add), len(new_incl)))
+                            if len(to_add.difference(unknown_plaintexts[u_ind])) > 0:
+                                print("Wrongly included %s" % (to_add.difference(unknown_plaintexts[u_ind])))
 
-                # Add additional n-Grams that are not included:
-                if len(kp.intersection(included_ngr)) == est_overlap:
-                    poss_excl_ngr = kp.difference(included_ngr)
-                    poss_excl_ngr = poss_excl_ngr.difference(init_guess_incl)
-                    new_excl = poss_excl_ngr.difference(not_included_ngr)
-                    not_included_ngr = not_included_ngr.union(poss_excl_ngr)
+                    # Add additional n-Grams that are not included:
+                    if len(kp.intersection(included_ngr)) == est_overlap:
+                        poss_excl_ngr = kp.difference(included_ngr)
+                        poss_excl_ngr = poss_excl_ngr.difference(init_guess_incl)
+                        new_excl = poss_excl_ngr.difference(not_included_ngr)
+                        not_included_ngr = not_included_ngr.union(poss_excl_ngr)
 
-                    if GLOBAL_CONFIG["Verbose"] and len(new_excl) > 0:
-                        print("Found %i possibly excluded n-grams, %i of them new" % (len(poss_excl_ngr), len(new_excl)))
-                        if len(poss_excl_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
-                            print("Wrongly excluded %s" % (poss_excl_ngr.intersection(unknown_plaintexts[u_ind])))
+                        if GLOBAL_CONFIG["Verbose"] and len(new_excl) > 0:
+                            print("Found %i possibly excluded n-grams, %i of them new" % (len(poss_excl_ngr), len(new_excl)))
+                            if len(poss_excl_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
+                                print("Wrongly excluded %s" % (poss_excl_ngr.intersection(unknown_plaintexts[u_ind])))
 
-        ground_truth = len(unknown_plaintexts[u_ind])
-        if len(included_ngr) > 0:
-            tp = len(included_ngr.intersection(unknown_plaintexts[u_ind]))
-            precision = tp / len(included_ngr)
-            recall = tp / ground_truth
-            if (precision + recall) > 0:
-                f1 = 2 * ((precision * recall) / (precision + recall))
+            ground_truth = len(unknown_plaintexts[u_ind])
+            if len(included_ngr) > 0:
+                tp = len(included_ngr.intersection(unknown_plaintexts[u_ind]))
+                precision = tp / len(included_ngr)
+                recall = tp / ground_truth
+                if (precision + recall) > 0:
+                    f1 = 2 * ((precision * recall) / (precision + recall))
+                else:
+                    f1 = 0
             else:
-                f1 = 0
-        else:
-            tp = precision = recall = f1 = 0
-        if GLOBAL_CONFIG["Verbose"]:
-            print("Found %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f" % (
-                tp, ground_truth, precision, recall, f1))
-        guessed = len(included_ngr)
-        simple.append((u_ind, tp, ground_truth, precision, recall, f1))
+                tp = precision = recall = f1 = 0
+            if GLOBAL_CONFIG["Verbose"]:
+                print("Found %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f" % (
+                    tp, ground_truth, precision, recall, f1))
+            guessed = len(included_ngr)
+            relist_simple.append((u_ind, tp, ground_truth, precision, recall, f1))
 
-        jacc_err = float("Inf")
-        guess_list = [set()]
-        refined_guess = set()
-        # available_ngr = included_ngr
+            jacc_err = float("Inf")
+            guess_list = [set()]
+            refined_guess = set()
+            # available_ngr = included_ngr
 
-        while True:
-            new_guess_list = []
-            for guess in guess_list:
+            while True:
+                new_guess_list = []
+                for guess in guess_list:
+                    je_list = []
+                    ngr_list = []
+                    available_ngr = included_ngr.difference(guess)
+                    for ngr in available_ngr:
+                        tmp = guess.union(set([ngr]))
+                        je = calc_mae_jacc(tmp, ordered_sim_inds, target_sims, known_plaintexts, est_overlaps, top_n=50)
+                        je_list.append(je)
+                        ngr_list.append(set([ngr]))
+
+                    inds_by_je = np.argsort(je_list)
+                    for j in range(min(len(je_list), 3)):
+                        new_guess_list.append(guess.union(ngr_list[inds_by_je[j]]))
+
+                guess_list += new_guess_list
+
                 je_list = []
-                ngr_list = []
-                available_ngr = included_ngr.difference(guess)
-                for ngr in available_ngr:
-                    tmp = guess.union(set([ngr]))
-                    je = calc_mae_jacc(tmp, ordered_sim_inds, target_sims, known_plaintexts, est_overlaps, top_n=50)
+                for guess in guess_list:
+                    je = calc_mae_jacc(guess, ordered_sim_inds, target_sims, known_plaintexts, est_overlaps, top_n=50)
                     je_list.append(je)
-                    ngr_list.append(set([ngr]))
 
                 inds_by_je = np.argsort(je_list)
-                for j in range(min(len(je_list), 3)):
-                    new_guess_list.append(guess.union(ngr_list[inds_by_je[j]]))
 
-            guess_list += new_guess_list
+                if je_list[inds_by_je[0]] < jacc_err:
+                    jacc_err = je_list[inds_by_je[0]]
+                    # print(jacc_err)
+                    refined_guess = guess_list[inds_by_je[0]]
+                else:
+                    break
 
-            je_list = []
-            for guess in guess_list:
-                je = calc_mae_jacc(guess, ordered_sim_inds, target_sims, known_plaintexts, est_overlaps, top_n=50)
-                je_list.append(je)
+                if len(guess_list) > 20:
+                    new_guess_list = []
+                    je_list = []
 
-            inds_by_je = np.argsort(je_list)
+                    for i in range(20):
+                        new_guess_list.append(guess_list[inds_by_je[i]])
+                    guess_list = new_guess_list
 
-            if je_list[inds_by_je[0]] < jacc_err:
-                jacc_err = je_list[inds_by_je[0]]
-                # print(jacc_err)
-                refined_guess = guess_list[inds_by_je[0]]
+            guessed_ref = len(refined_guess)
+            if len(refined_guess) > 0:
+                tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
+                precision_ref = tp_ref / len(refined_guess)
+                recall_ref = tp_ref / ground_truth
+
+                if (precision_ref + recall_ref) > 0:
+                    f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
+                else:
+                    f1_ref = 0
             else:
-                break
-
-            if len(guess_list) > 20:
-                new_guess_list = []
-                je_list = []
-
-                for i in range(20):
-                    new_guess_list.append(guess_list[inds_by_je[i]])
-                guess_list = new_guess_list
-
-        guessed_ref = len(refined_guess)
-        if len(refined_guess) > 0:
-            tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
-            precision_ref = tp_ref / len(refined_guess)
-            recall_ref = tp_ref / ground_truth
-
-            if (precision_ref + recall_ref) > 0:
-                f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
-            else:
-                f1_ref = 0
-        else:
-            tp_ref = precision_ref = recall_ref = f1_ref = 0
+                tp_ref = precision_ref = recall_ref = f1_ref = 0
 
 
-        if GLOBAL_CONFIG["Verbose"]:
-            print("--- REFINED GUESS ---\nFound %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f \nTrue: %s" % (
-                tp_ref, ground_truth, precision_ref, recall_ref, f1_ref, unknown_data[u_ind]))
+            if GLOBAL_CONFIG["Verbose"]:
+                print("--- REFINED GUESS ---\nFound %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f \nTrue: %s" % (
+                    tp_ref, ground_truth, precision_ref, recall_ref, f1_ref, unknown_data[u_ind]))
 
-        refined.append((u_ind, tp_ref, ground_truth, precision_ref, recall_ref, f1_ref))
+            relist_refined.append((u_ind, tp_ref, ground_truth, precision_ref, recall_ref, f1_ref))
+
+        return relist_simple, relist_refined
+
+
+    ind_chunks = split_to_chunks(list(range(len(unknown_alice_encs))), os.cpu_count()-1)
+
+    with tqdm_joblib(tqdm(desc="Extension", total=os.cpu_count()-1)) as progress_bar:
+        parallel = Parallel(n_jobs=-2)
+        output_generator = parallel(delayed(__extend)(chunk, unknown_plaintexts, ts_simdict, GLOBAL_CONFIG) for chunk in ind_chunks)
+
+    simple = []
+    refined = []
+    for tmp_simple, tmp_refined in output_generator:
+        simple += tmp_simple
+        refined += tmp_refined
 
     simple_precs = [s[3] for s in simple]
     simple_recs = [s[4] for s in simple]
@@ -246,43 +332,41 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     ref_f1 = [r[5] for r in refined]
 
     elapsed_total = time.time() - start_total
-    if GLOBAL_CONFIG["BenchMode"]:
-        bench_keys = ["timestamp"]
-        bench_vals = [time.time()]
-        for key, val in EMB_CONFIG.items():
-            bench_keys.append(key)
-            bench_vals.append(val)
-        for key, val in ENC_CONFIG.items():
-            bench_keys.append(key)
-            bench_vals.append(val)
-        for key, val in GLOBAL_CONFIG.items():
-            bench_keys.append(key)
-            bench_vals.append(val)
-        for key, val in ALIGN_CONFIG.items():
-            bench_keys.append(key)
-            bench_vals.append(val)
+    bench_vals = [time.time()]
+    bench_keys = ["timestamp"]
 
-        bench_keys += ["MinPrecision", "MaxPrecision","AvgPrecision", "MedPrecision", "MinRecall", "MaxRecall",
-                       "AvgRecall", "MedRecall", "MinF1", "MaxF1", "AvgF1", "MedF1", "MinPrecision_Ref",
-                       "MaxPrecision_Ref","AvgPrecision_Ref", "MedPrecision_Ref", "MinRecall_Ref", "MaxRecall_Ref",
-                       "AvgRecall_Ref", "MedRecall_Ref", "MinF1_Ref", "MaxF1_Ref", "AvgF1_Ref", "MedF1_Ref",
-                       "DuractionSec"]
+    for key, val in EMB_CONFIG.items():
+        bench_keys.append(key)
+        bench_vals.append(val)
+    for key, val in ENC_CONFIG.items():
+        bench_keys.append(key)
+        bench_vals.append(val)
+    for key, val in GLOBAL_CONFIG.items():
+        bench_keys.append(key)
+        bench_vals.append(val)
+    for key, val in ALIGN_CONFIG.items():
+        bench_keys.append(key)
+        bench_vals.append(val)
 
-        bench_vals += [min(simple_precs), max(simple_precs), mean(simple_precs), median(simple_precs),
-        min(simple_recs), max(simple_recs), mean(simple_recs), median(simple_recs),
-        min(simple_f1), max(simple_f1), mean(simple_f1), median(simple_f1),
+    bench_keys += ["MinPrecision", "MaxPrecision","AvgPrecision", "MedPrecision", "MinRecall", "MaxRecall",
+                   "AvgRecall", "MedRecall", "MinF1", "MaxF1", "AvgF1", "MedF1", "MinPrecision_Ref",
+                   "MaxPrecision_Ref","AvgPrecision_Ref", "MedPrecision_Ref", "MinRecall_Ref", "MaxRecall_Ref",
+                   "AvgRecall_Ref", "MedRecall_Ref", "MinF1_Ref", "MaxF1_Ref", "AvgF1_Ref", "MedF1_Ref",
+                   "DuractionSec"]
 
-        min(ref_precs), max(ref_precs), mean(ref_precs), median(ref_precs),
-        min(ref_recs), max(ref_recs), mean(ref_recs), median(ref_recs),
-        min(ref_f1), max(ref_f1), mean(ref_f1), median(ref_f1),
-        elapsed_total]
+    bench_vals += [min(simple_precs), max(simple_precs), mean(simple_precs), median(simple_precs),
+    min(simple_recs), max(simple_recs), mean(simple_recs), median(simple_recs),
+    min(simple_f1), max(simple_f1), mean(simple_f1), median(simple_f1),
 
+    min(ref_precs), max(ref_precs), mean(ref_precs), median(ref_precs),
+    min(ref_recs), max(ref_recs), mean(ref_recs), median(ref_recs),
+    min(ref_f1), max(ref_f1), mean(ref_f1), median(ref_f1),
+    elapsed_total]
 
-        if not os.path.isfile("data/extension_benchmark.tsv"):
-            save_tsv([bench_keys], "data/extension_benchmark.tsv")
+    if not os.path.isfile("data/extension_benchmark.tsv"):
+        save_tsv([bench_keys], "data/extension_benchmark.tsv")
 
-        save_tsv([bench_vals], "data/extension_benchmark.tsv", mode="a")
-
+    save_tsv([bench_vals], "data/extension_benchmark.tsv", mode="a")
 
 
     report_string = """---- ATTACK SUMMARY ----
@@ -334,21 +418,23 @@ Median F1:  %0.4f
 
 if __name__ == "__main__":
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_1k.tsv",
-        "Overlap": 0.95,
+        "Data": "./data/fakename_5k.tsv",
+        "Overlap": 0.05,
+        "CorrectShare": 0.9,
         "DropFrom": "Eve",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
-        "Verbose": True,  # Print Status Messages?
+        "Verbose": False,  # Print Status Messages?
         "MatchingMetric": "cosine",
         "Matching": "MinWeight",
         "Workers": -1,
         "SaveAliceEncs": True,
-        "SaveEveEncs": False
+        "SaveEveEncs": False,
+        "RunGMA" : False
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": None,
+        "AliceAlgo": "BloomFilter",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",

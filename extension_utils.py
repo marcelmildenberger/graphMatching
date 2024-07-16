@@ -1,9 +1,47 @@
 import csv
 import math
+import random
 from typing import Sequence
 from copy import deepcopy
 import numpy as np
 
+
+def split_to_chunks(a, n):
+    # https://stackoverflow.com/a/2135920
+    k, m = divmod(len(a), n)
+    return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
+
+def simulate_mapping(uids, correct_share=1.0, matched_share=1.0):
+    assert correct_share <= 1.0
+    assert matched_share <= 1.0
+
+    num_matchable = round(len(uids)*matched_share)
+    num_incorrect = round(num_matchable*(1-correct_share))
+    matchable = random.sample(uids, num_matchable)
+    non_matchable = [u for u in uids if u not in matchable]
+
+    mapping = {}
+    for u_id in matchable:
+        mapping["S_"+str(u_id)] = "L_"+str(u_id)
+
+    num_to_swap = num_incorrect//2
+    num_to_unmatched = num_incorrect - (num_to_swap*2)
+    assert num_to_unmatched <= len(non_matchable)
+
+    mapping_keys = list(mapping.keys())
+    swap_inds = random.sample(list(range(0, len(mapping_keys)-1, 2)), num_to_swap)
+
+    for i in swap_inds:
+        tmp = mapping[mapping_keys[i]]
+        mapping[mapping_keys[i]] = mapping[mapping_keys[i+1]]
+        mapping[mapping_keys[i + 1]] = tmp
+
+    to_unmatched_inds = [i for i in range(len(mapping_keys)) if i not in swap_inds and i-1 not in swap_inds]
+    to_unmatched_inds = random.sample(to_unmatched_inds, num_to_unmatched)
+    for i in to_unmatched_inds:
+        mapping[mapping_keys[i]] = "L_"+str(non_matchable.pop())
+
+    return mapping
 
 def read_tsv(path: str, header: bool = True, as_dict: bool = False, delim: str = "\t") -> Sequence[Sequence[str]]:
     data = {} if as_dict else []
