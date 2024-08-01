@@ -11,35 +11,41 @@ def split_to_chunks(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
+
 def simulate_mapping(uids, correct_share=1.0, matched_share=1.0):
     assert correct_share <= 1.0
     assert matched_share <= 1.0
 
-    num_matchable = round(len(uids)*matched_share)
-    num_incorrect = round(num_matchable*(1-correct_share))
-    matchable = random.sample(uids, num_matchable)
-    non_matchable = [u for u in uids if u not in matchable]
-
     mapping = {}
-    for u_id in matchable:
-        mapping["S_"+str(u_id)] = "L_"+str(u_id)
 
-    num_to_swap = num_incorrect//2
-    num_to_unmatched = num_incorrect - (num_to_swap*2)
-    assert num_to_unmatched <= len(non_matchable)
+    num_matchable = round(len(uids) * matched_share)
+    uids_matchable = random.sample(uids, num_matchable)
 
-    mapping_keys = list(mapping.keys())
-    swap_inds = random.sample(list(range(0, len(mapping_keys)-1, 2)), num_to_swap)
+    num_incorrect = round(num_matchable * (1 - correct_share))
 
-    for i in swap_inds:
-        tmp = mapping[mapping_keys[i]]
-        mapping[mapping_keys[i]] = mapping[mapping_keys[i+1]]
-        mapping[mapping_keys[i + 1]] = tmp
+    if num_incorrect > 0:
+        if num_incorrect == 1:
+            assert len(uids) - num_matchable >= 1, "Non-matched population must exist if only one record is matched wrongly"
+            uids_non_matchable = [u for u in uids if u not in uids_matchable]
+            uids_matched_wrong = random.sample(uids_matchable, 1)
+            uids_matched_wrong_shifted = random.sample(uids_non_matchable, 1)
+        else:
+            uids_matched_wrong = random.sample(uids_matchable, num_incorrect)
+            uids_matched_wrong_shifted = uids_matched_wrong[:-1]
+            uids_matched_wrong_shifted.insert(0, uids_matched_wrong[-1])
 
-    to_unmatched_inds = [i for i in range(len(mapping_keys)) if i not in swap_inds and i-1 not in swap_inds]
-    to_unmatched_inds = random.sample(to_unmatched_inds, num_to_unmatched)
-    for i in to_unmatched_inds:
-        mapping[mapping_keys[i]] = "L_"+str(non_matchable.pop())
+        assert len(uids_matched_wrong) == len(uids_matched_wrong_shifted) == num_incorrect
+
+        for u_id, u_id_shifted in zip(uids_matched_wrong, uids_matched_wrong_shifted):
+            mapping["S_" + str(u_id)] = "L_" + str(u_id_shifted)
+
+        uids_matched_correct = [u for u in uids_matchable if u not in uids_matched_wrong]
+
+    else:
+        uids_matched_correct = uids_matchable
+
+    for u_id in uids_matched_correct:
+        mapping["S_" + str(u_id)] = "L_" + str(u_id)
 
     return mapping
 
@@ -178,25 +184,6 @@ def pairwise_jacc_tmh(arrlist_a, arrlist_b, onebit=True):
     return sims
 
 
-def guess_zero_overlap(target_sims, known_plaintexts, included_ngr, avg_plaintext_length, not_included_ngr=None,
-                       ratio=0.3, verbose=False):
-    if not_included_ngr is None:
-        not_included_ngr = set()
-    i = 0
-    poss_zero_overlap = []
-    for sim, ngr in zip(target_sims, known_plaintexts):
-        est_min_dice = 2 / (len(ngr) + avg_plaintext_length)
-        if sim <= est_min_dice * ratio and len(included_ngr.intersection(ngr)) == 0:
-            poss_zero_overlap.append((i, sim, ngr))
-        i += 1
-
-    target_intersect = 0
-
-    for p in poss_zero_overlap:
-        not_included_ngr = not_included_ngr.union(p[2])
-    return not_included_ngr
-
-
 def est_bf_intersect(bf_a, bf_b, k):
     return est_bf_elements(bf_a, k) + est_bf_elements(bf_b, k) - est_bf_union(bf_a, bf_b, k)
 
@@ -259,11 +246,52 @@ def guess_zero_overlap(target_sims, known_plaintexts, included_ngr=None, not_inc
         not_included_ngr = not_included_ngr.union(p[2])
     return not_included_ngr
 
-def calc_mae_jacc(a, ordered_sim_inds, target_sims, known_plaintexts, overlap_dict, top_n=10):
+def calc_mae_jacc(a, ordered_sim_inds, target_sims, known_plaintexts, top_n=10):
     jacc_mae = 0
     for i in range(top_n):
         overlap = len(a.intersection(known_plaintexts[ordered_sim_inds[i]]))
         jacc = overlap/((len(a)+len(known_plaintexts[ordered_sim_inds[i]]))-overlap)
-        jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])
-        #jacc_mae += (abs(overlap-overlap_dict[ordered_sim_inds[i]])**2)
-    return jacc_mae
+        #jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])
+        jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])**2
+
+    ordered_sim_inds = np.flip(ordered_sim_inds)
+    for i in range(top_n):
+        overlap = len(a.intersection(known_plaintexts[ordered_sim_inds[i]]))
+        jacc = overlap/((len(a)+len(known_plaintexts[ordered_sim_inds[i]]))-overlap)
+        #jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])
+        jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])**2
+    return jacc_mae/(top_n*2)
+
+def guess_excl_ngr(target_sims, known_plaintexts, included_ngr, not_included_ngr=None, verbose=False):
+    if not_included_ngr is None:
+        not_included_ngr = set()
+
+    poss_zero_overlap = []
+    for sim, ngr in zip(target_sims, known_plaintexts):
+        if sim <= 0 and len(included_ngr.intersection(ngr)) == 0:
+            not_included_ngr = not_included_ngr.union(ngr)
+
+    return not_included_ngr
+
+def est_bf_elem(bf, num_hash_func):
+    bf_len = bf.shape[0]
+    return -(bf_len/num_hash_func)*math.log(1-(sum(bf)/bf_len))
+
+def pairwise_intersections_bf(arrlist_a, arrlist_b, num_hash_func):
+    if len(arrlist_a.shape) == 1:
+        arrlist_a = arrlist_a.reshape(1,-1)
+    if len(arrlist_b.shape) == 1:
+        arrlist_b = arrlist_b.reshape(1,-1)
+    ovls = np.zeros((1, len(arrlist_a)*len(arrlist_b)), dtype=float)
+    jaccs = np.zeros((1, len(arrlist_a)*len(arrlist_b)), dtype=float)
+    i = 0
+    for arr_a in arrlist_a:
+        arr_a_elem = round(est_bf_elem(arr_a, num_hash_func))
+        for arr_b in arrlist_b:
+            arr_b_elem = round(est_bf_elem(arr_b, num_hash_func))
+            union_elem = max(0, round(est_bf_elem(np.logical_or(arr_a, arr_b), num_hash_func)))
+            intersect_elem = max(0, round((arr_a_elem + arr_b_elem) - union_elem))
+            ovls[0][i] = intersect_elem
+            jaccs[0][i] = intersect_elem/union_elem
+            i += 1
+    return ovls, jaccs
