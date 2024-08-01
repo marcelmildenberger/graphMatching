@@ -100,7 +100,7 @@ def dice(a, b):
 
 
 def jaccard(a, b):
-    return a.intersection(b) / ((len(a) + len(b)) - len(a.intersection(b)))
+    return len(a.intersection(b)) / ((len(a) + len(b)) - len(a.intersection(b)))
 
 
 def est_bf_elements(bf, k):
@@ -277,7 +277,7 @@ def est_bf_elem(bf, num_hash_func):
     bf_len = bf.shape[0]
     return -(bf_len/num_hash_func)*math.log(1-(sum(bf)/bf_len))
 
-def pairwise_intersections_bf(arrlist_a, arrlist_b, num_hash_func):
+def pairwise_jaccard_bf(arrlist_a, arrlist_b, num_hash_func):
     if len(arrlist_a.shape) == 1:
         arrlist_a = arrlist_a.reshape(1,-1)
     if len(arrlist_b.shape) == 1:
