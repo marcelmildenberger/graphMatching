@@ -18,6 +18,216 @@ from encoders.tmh_encoder import TMHEncoder
 from encoders.tsh_encoder import TSHEncoder
 from encoders.non_encoder import NonEncoder
 
+
+def __extend(chunk, unknown_plaintexts, known_plaintexts, ts_simdict, avglen, GLOBAL_CONFIG):
+    relist_simple = []
+    relist_refined = []
+
+    for u_ind in chunk:
+        # included_ngr = set()
+
+        if GLOBAL_CONFIG["Verbose"]:
+            print("___________________________")
+
+        target_sims = ts_simdict[u_ind]
+        #target_overlaps = ovl_simdict[u_ind]
+
+        asc_sim_inds = np.argsort(target_sims)
+        ordered_sim_inds = np.flip(asc_sim_inds)
+
+        init_guess_list = []
+        for i in range(50):
+            init_guess_list += list(known_plaintexts[ordered_sim_inds[i]])
+
+        cntr = Counter(init_guess_list)
+        orig_incl_ngr = set([s[0] for s in cntr.most_common(20)])
+        included_ngr = set([s[0] for s in cntr.most_common(5)])
+        # orig_incl_ngr = included_ngr
+
+        # init_guess_incl = set()
+        # TMH 6
+        # for i in range(10):
+        #    init_guess_incl = init_guess_incl.union(known_plaintexts[ordered_sim_inds[i]])
+
+        not_included_ngr = set()
+        # TMH 100
+        for i in range(min(50, len(known_plaintexts))):
+            not_included_ngr = not_included_ngr.union(known_plaintexts[asc_sim_inds[i]])
+
+        # TMH mit incl_ngr statt orig_incl
+        not_included_ngr = guess_zero_overlap(target_sims, known_plaintexts, included_ngr=orig_incl_ngr,
+                                              not_included_ngr=not_included_ngr, perc=1,
+                                              verbose=GLOBAL_CONFIG["Verbose"], avglen=avglen)
+        #not_included_ngr = guess_excl_ngr(target_overlaps, known_plaintexts, set(), not_included_ngr,
+        #                                  GLOBAL_CONFIG["Verbose"])
+
+        not_included_ngr = not_included_ngr.difference(orig_incl_ngr)
+
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Guessed %i not included N-Grams" % (len(not_included_ngr)))
+            if len(not_included_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
+                wrong_not_incl = not_included_ngr.intersection(unknown_plaintexts[u_ind])
+                print("%i of them wrongly: %s" % (len(wrong_not_incl), str(wrong_not_incl)))
+
+        incl_size_before = float("-Inf")
+        excl_size_before = float("-Inf")
+
+        est_overlaps = {}
+
+        while (len(included_ngr) - incl_size_before) > 0 or (len(not_included_ngr) - excl_size_before) > 0:
+            incl_size_before = len(included_ngr)
+            excl_size_before = len(not_included_ngr)
+
+            high_sim_ngr = []
+
+            for i in ordered_sim_inds:
+                kp = known_plaintexts[i]
+                kp_len = len(kp)
+                jacc = target_sims[i]
+                est_overlap = round((jacc * (kp_len + avglen) / (jacc + 1)))
+                # est_overlap = target_overlaps[i]
+                est_overlaps[i] = est_overlap
+
+                if GLOBAL_CONFIG["Verbose"]:
+                    gt = kp.intersection(unknown_plaintexts[u_ind])
+                    print("Guessed overlap of %i, True %i" % (est_overlap, len(gt)))
+                # Find n-grams that are potentially part of the unknown string
+                # difference = kp.difference(not_included_ngr)
+
+                # Find n-grams that are definitely part of both, the known and the unknown string
+                known_intersect = kp.intersection(included_ngr)
+
+                if len(kp.difference(not_included_ngr.union(known_intersect))) == est_overlap - len(known_intersect):
+                    to_add = kp.difference(not_included_ngr)
+                    new_incl = to_add.difference(included_ngr)
+                    high_sim_ngr += list(to_add)
+                    included_ngr = included_ngr.union(to_add)
+                    if GLOBAL_CONFIG["Verbose"] and len(new_incl) > 0:
+                        print("Found %i possibly included n-grams, %i of them new" % (len(to_add), len(new_incl)))
+                        if len(to_add.difference(unknown_plaintexts[u_ind])) > 0:
+                            print("Wrongly included %s" % (to_add.difference(unknown_plaintexts[u_ind])))
+
+                # Add additional n-Grams that are not included:
+                if len(kp.intersection(included_ngr)) == est_overlap:
+                    poss_excl_ngr = kp.difference(included_ngr)
+                    poss_excl_ngr = poss_excl_ngr.difference(orig_incl_ngr)
+                    new_excl = poss_excl_ngr.difference(not_included_ngr)
+                    not_included_ngr = not_included_ngr.union(poss_excl_ngr)
+
+                    if GLOBAL_CONFIG["Verbose"] and len(new_excl) > 0:
+                        print(
+                            "Found %i possibly excluded n-grams, %i of them new" % (len(poss_excl_ngr), len(new_excl)))
+                        if len(poss_excl_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
+                            print("Wrongly excluded %s" % (poss_excl_ngr.intersection(unknown_plaintexts[u_ind])))
+
+        ground_truth = len(unknown_plaintexts[u_ind])
+        if len(included_ngr) > 0:
+            tp = len(included_ngr.intersection(unknown_plaintexts[u_ind]))
+            precision = tp / len(included_ngr)
+            recall = tp / ground_truth
+            if (precision + recall) > 0:
+                f1 = 2 * ((precision * recall) / (precision + recall))
+            else:
+                f1 = 0
+        else:
+            tp = precision = recall = f1 = 0
+        if GLOBAL_CONFIG["Verbose"]:
+            print("Found %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f" % (
+                tp, ground_truth, precision, recall, f1))
+        guessed = len(included_ngr)
+        relist_simple.append((u_ind, tp, ground_truth, precision, recall, f1))
+
+        jacc_err = float("Inf")
+        guess_list = [set()]
+        refined_guess = set()
+        # available_ngr = included_ngr
+        # target_len = round(est_bf_elem(unknown_alice_encs[u_ind],10))
+
+        while True:
+            new_guess_list = []
+            for guess in guess_list:
+                je_list = []
+                ngr_list = []
+                available_ngr = included_ngr.difference(guess)
+                for ngr in available_ngr:
+                    tmp = guess.union(set([ngr]))
+                    je = calc_mae_jacc(tmp, ordered_sim_inds, target_sims, known_plaintexts, top_n=25)
+                    je_list.append(je)
+                    ngr_list.append(set([ngr]))
+
+                inds_by_je = np.argsort(je_list)
+                for j in range(min(len(je_list), 3)):
+                    new_guess_list.append(guess.union(ngr_list[inds_by_je[j]]))
+
+            guess_list += new_guess_list
+
+            je_list = []
+            for guess in guess_list:
+                je = calc_mae_jacc(guess, ordered_sim_inds, target_sims, known_plaintexts, top_n=25)
+                je_list.append(je)
+
+            inds_by_je = np.argsort(je_list)
+
+            if je_list[inds_by_je[0]] < jacc_err:
+                jacc_err = je_list[inds_by_je[0]]
+                # print(jacc_err)
+                refined_guess = guess_list[inds_by_je[0]]
+            else:
+                break
+
+            if len(guess_list) > 5:
+                new_guess_list = []
+                je_list = []
+
+                for i in range(5):
+                    new_guess_list.append(guess_list[inds_by_je[i]])
+                guess_list = new_guess_list
+
+        guessed_ref = len(refined_guess)
+        if len(refined_guess) > 0:
+            tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
+            precision_ref = tp_ref / len(refined_guess)
+            recall_ref = tp_ref / ground_truth
+
+            if (precision_ref + recall_ref) > 0:
+                f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
+            else:
+                f1_ref = 0
+        else:
+            tp_ref = precision_ref = recall_ref = f1_ref = 0
+
+        if GLOBAL_CONFIG["Verbose"]:
+            print(
+                "--- REFINED GUESS ---\nFound %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f" % (
+                    tp_ref, ground_truth, precision_ref, recall_ref, f1_ref))
+
+        relist_refined.append((u_ind, tp_ref, ground_truth, precision_ref, recall_ref, f1_ref))
+    return relist_simple, relist_refined
+
+
+def __simcalc(chunk, known_alice_encs, ENC_CONFIG):
+    ts_simdict = {}
+    #ovl_simdict = {}
+    #old_simdict = {}
+    for u_ind, u_enc in chunk:
+        if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
+            #tmp = pairwise_distances(u_enc.reshape(1, -1), known_alice_encs, metric="jaccard")
+            #tmp = 1 - tmp
+            overlaps, tmp = pairwise_intersections_bf(u_enc.reshape(1, -1), known_alice_encs, 10)
+
+        elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
+            tmp = pairwise_jacc_tmh(u_enc, known_alice_encs, ENC_CONFIG["Alice1BitHash"])
+        else:
+            tmp = pairwise_dice(u_enc, known_alice_encs)
+
+        #overlaps = list(overlaps[0])
+        #jaccs = list(jaccs[0])
+        tmp = list(tmp[0])
+        #ovl_simdict[u_ind] = overlaps
+        ts_simdict[u_ind] = tmp
+        #old_simdict[u_ind] = tmp
+    return ts_simdict
+
 def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     #https://stackoverflow.com/a/58936697
     @contextlib.contextmanager
@@ -116,206 +326,22 @@ def run_extension(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     start_total = time.time()
 
     ts_simdict = {}
+    unknown_alice_encs_enum = [(u_ind, u_enc) for u_ind, u_enc in enumerate(unknown_alice_encs)]
+    unknown_alice_encs_enum = split_to_chunks(unknown_alice_encs_enum, os.cpu_count() - 1)
+    with tqdm_joblib(tqdm(desc="Sim Calculation", total=os.cpu_count() - 1)) as progress_bar:
+        parallel = Parallel(n_jobs=-2)
+        output_generator = parallel(
+            delayed(__simcalc)(chunk, known_alice_encs, ENC_CONFIG) for chunk in unknown_alice_encs_enum)
 
-    for u_ind, u_enc in tqdm(enumerate(unknown_alice_encs), total=len(unknown_alice_encs), disable=GLOBAL_CONFIG["Verbose"], desc="Sim Calculation"):
-        if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
-            tmp = pairwise_distances(u_enc.reshape(1, -1), known_alice_encs, metric="jaccard")
-            tmp = 1 - tmp
-        elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
-            tmp = pairwise_jacc_tmh(u_enc, known_alice_encs, ENC_CONFIG["Alice1BitHash"])
-        else:
-            tmp = pairwise_dice(u_enc, known_alice_encs)
-
-        tmp = list(tmp[0])
-        ts_simdict[u_ind] = tmp
-
-    del u_ind, u_enc
-
-    def __extend(chunk, unknown_plaintexts, ts_simdict, GLOBAL_CONFIG):
-        relist_simple = []
-        relist_refined = []
-
-        for u_ind in chunk:
-
-            if GLOBAL_CONFIG["Verbose"]:
-                print("___________________________")
-
-            target_sims = ts_simdict[u_ind]
-
-            asc_sim_inds = np.argsort(target_sims)
-            ordered_sim_inds = np.flip(asc_sim_inds)
-
-            init_guess_list = []
-            for i in range(10):
-                init_guess_list += list(known_plaintexts[ordered_sim_inds[i]])
-
-            cntr = Counter(init_guess_list)
-            included_ngr = set([s[0] for s in cntr.most_common(5)])
-            orig_incl_ngr = included_ngr
-
-            init_guess_incl = set()
-            # TMH 6
-            for i in range(6):
-                init_guess_incl = init_guess_incl.union(known_plaintexts[ordered_sim_inds[i]])
-
-            not_included_ngr = set()
-            # TMH 100
-            for i in range(min(100, len(known_plaintexts))):
-                not_included_ngr = not_included_ngr.union(known_plaintexts[asc_sim_inds[i]])
-
-            # TMH mit incl_ngr statt orig_incl
-            not_included_ngr = guess_zero_overlap(target_sims, known_plaintexts, included_ngr=orig_incl_ngr,
-                                                  not_included_ngr=not_included_ngr, perc=1,
-                                                  verbose=GLOBAL_CONFIG["Verbose"], avglen=avglen)
-
-            not_included_ngr = not_included_ngr.difference(init_guess_incl)
-
-            if GLOBAL_CONFIG["Verbose"]:
-                print("Guessed %i not included N-Grams" % (len(not_included_ngr)))
-                if len(not_included_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
-                    wrong_not_incl = not_included_ngr.intersection(unknown_plaintexts[u_ind])
-                    print("%i of them wrongly: %s" % (len(wrong_not_incl), str(wrong_not_incl)))
-
-            incl_size_before = float("-Inf")
-            excl_size_before = float("-Inf")
-
-            est_overlaps = {}
-
-            while (len(included_ngr) - incl_size_before) > 0 or (len(not_included_ngr) - excl_size_before) > 0:
-                incl_size_before = len(included_ngr)
-                excl_size_before = len(not_included_ngr)
-
-                high_sim_ngr = []
-
-                for i in ordered_sim_inds:
-                    kp = known_plaintexts[i]
-                    kp_len = len(kp)
-                    jacc = target_sims[i]
-                    est_overlap = round((jacc * (kp_len + avglen) / (jacc + 1)))
-                    est_overlaps[i] = est_overlap
-
-                    if GLOBAL_CONFIG["Verbose"]:
-                        gt = kp.intersection(unknown_plaintexts[u_ind])
-                        print("Guessed overlap of %i, True %i" % (est_overlap, len(gt)))
-                    # Find n-grams that are potentially part of the unknown string
-                    #difference = kp.difference(not_included_ngr)
-
-                    # Find n-grams that are definitely part of both, the known and the unknown string
-                    known_intersect = kp.intersection(included_ngr)
-
-
-                    if len(kp.difference(not_included_ngr.union(known_intersect))) == est_overlap - len(known_intersect):
-                        to_add = kp.difference(not_included_ngr)
-                        new_incl = to_add.difference(included_ngr)
-                        high_sim_ngr += list(to_add)
-                        included_ngr = included_ngr.union(to_add)
-                        if GLOBAL_CONFIG["Verbose"] and len(new_incl) > 0:
-                            print("Found %i possibly included n-grams, %i of them new" % (len(to_add), len(new_incl)))
-                            if len(to_add.difference(unknown_plaintexts[u_ind])) > 0:
-                                print("Wrongly included %s" % (to_add.difference(unknown_plaintexts[u_ind])))
-
-                    # Add additional n-Grams that are not included:
-                    if len(kp.intersection(included_ngr)) == est_overlap:
-                        poss_excl_ngr = kp.difference(included_ngr)
-                        poss_excl_ngr = poss_excl_ngr.difference(init_guess_incl)
-                        new_excl = poss_excl_ngr.difference(not_included_ngr)
-                        not_included_ngr = not_included_ngr.union(poss_excl_ngr)
-
-                        if GLOBAL_CONFIG["Verbose"] and len(new_excl) > 0:
-                            print("Found %i possibly excluded n-grams, %i of them new" % (len(poss_excl_ngr), len(new_excl)))
-                            if len(poss_excl_ngr.intersection(unknown_plaintexts[u_ind])) > 0:
-                                print("Wrongly excluded %s" % (poss_excl_ngr.intersection(unknown_plaintexts[u_ind])))
-
-            ground_truth = len(unknown_plaintexts[u_ind])
-            if len(included_ngr) > 0:
-                tp = len(included_ngr.intersection(unknown_plaintexts[u_ind]))
-                precision = tp / len(included_ngr)
-                recall = tp / ground_truth
-                if (precision + recall) > 0:
-                    f1 = 2 * ((precision * recall) / (precision + recall))
-                else:
-                    f1 = 0
-            else:
-                tp = precision = recall = f1 = 0
-            if GLOBAL_CONFIG["Verbose"]:
-                print("Found %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f" % (
-                    tp, ground_truth, precision, recall, f1))
-            guessed = len(included_ngr)
-            relist_simple.append((u_ind, tp, ground_truth, precision, recall, f1))
-
-            jacc_err = float("Inf")
-            guess_list = [set()]
-            refined_guess = set()
-            # available_ngr = included_ngr
-
-            while True:
-                new_guess_list = []
-                for guess in guess_list:
-                    je_list = []
-                    ngr_list = []
-                    available_ngr = included_ngr.difference(guess)
-                    for ngr in available_ngr:
-                        tmp = guess.union(set([ngr]))
-                        je = calc_mae_jacc(tmp, ordered_sim_inds, target_sims, known_plaintexts, est_overlaps, top_n=50)
-                        je_list.append(je)
-                        ngr_list.append(set([ngr]))
-
-                    inds_by_je = np.argsort(je_list)
-                    for j in range(min(len(je_list), 3)):
-                        new_guess_list.append(guess.union(ngr_list[inds_by_je[j]]))
-
-                guess_list += new_guess_list
-
-                je_list = []
-                for guess in guess_list:
-                    je = calc_mae_jacc(guess, ordered_sim_inds, target_sims, known_plaintexts, est_overlaps, top_n=50)
-                    je_list.append(je)
-
-                inds_by_je = np.argsort(je_list)
-
-                if je_list[inds_by_je[0]] < jacc_err:
-                    jacc_err = je_list[inds_by_je[0]]
-                    # print(jacc_err)
-                    refined_guess = guess_list[inds_by_je[0]]
-                else:
-                    break
-
-                if len(guess_list) > 20:
-                    new_guess_list = []
-                    je_list = []
-
-                    for i in range(20):
-                        new_guess_list.append(guess_list[inds_by_je[i]])
-                    guess_list = new_guess_list
-
-            guessed_ref = len(refined_guess)
-            if len(refined_guess) > 0:
-                tp_ref = len(refined_guess.intersection(unknown_plaintexts[u_ind]))
-                precision_ref = tp_ref / len(refined_guess)
-                recall_ref = tp_ref / ground_truth
-
-                if (precision_ref + recall_ref) > 0:
-                    f1_ref = 2 * ((precision_ref * recall_ref) / (precision_ref + recall_ref))
-                else:
-                    f1_ref = 0
-            else:
-                tp_ref = precision_ref = recall_ref = f1_ref = 0
-
-
-            if GLOBAL_CONFIG["Verbose"]:
-                print("--- REFINED GUESS ---\nFound %i of %i N-Grams. \nPrecision: %f \nRecall: %f \nF1-Score %f \nTrue: %s" % (
-                    tp_ref, ground_truth, precision_ref, recall_ref, f1_ref, unknown_data[u_ind]))
-
-            relist_refined.append((u_ind, tp_ref, ground_truth, precision_ref, recall_ref, f1_ref))
-
-        return relist_simple, relist_refined
+    for tmp_simdict in output_generator:
+        ts_simdict.update(tmp_simdict)
 
 
     ind_chunks = split_to_chunks(list(range(len(unknown_alice_encs))), os.cpu_count()-1)
 
     with tqdm_joblib(tqdm(desc="Extension", total=os.cpu_count()-1)) as progress_bar:
         parallel = Parallel(n_jobs=-2)
-        output_generator = parallel(delayed(__extend)(chunk, unknown_plaintexts, ts_simdict, GLOBAL_CONFIG) for chunk in ind_chunks)
+        output_generator = parallel(delayed(__extend)(chunk, unknown_plaintexts, known_plaintexts, ts_simdict, avglen, GLOBAL_CONFIG) for chunk in ind_chunks)
 
     simple = []
     refined = []
