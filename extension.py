@@ -213,12 +213,12 @@ def __simcalc(chunk, known_alice_encs, ENC_CONFIG):
         if ENC_CONFIG["AliceAlgo"] == "BloomFilter":
             #tmp = pairwise_distances(u_enc.reshape(1, -1), known_alice_encs, metric="jaccard")
             #tmp = 1 - tmp
-            overlaps, tmp = pairwise_intersections_bf(u_enc.reshape(1, -1), known_alice_encs, 10)
+            overlaps, tmp = pairwise_jaccard_bf(u_enc.reshape(1, -1), known_alice_encs, 10)
 
         elif ENC_CONFIG["AliceAlgo"] == "TabMinHash":
             tmp = pairwise_jacc_tmh(u_enc, known_alice_encs, ENC_CONFIG["Alice1BitHash"])
         else:
-            tmp = pairwise_dice(u_enc, known_alice_encs)
+            tmp = pairwise_jaccard(u_enc, known_alice_encs)
 
         #overlaps = list(overlaps[0])
         #jaccs = list(jaccs[0])
