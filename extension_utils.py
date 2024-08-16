@@ -184,6 +184,24 @@ def pairwise_jacc_tmh(arrlist_a, arrlist_b, onebit=True):
     return sims
 
 
+def pairwise_dice_tmh(arrlist_a, arrlist_b, onebit=True):
+    if onebit:
+        simfunc = est_1bit_dice
+    else:
+        simfunc = dice_sim
+
+    if len(arrlist_a.shape) == 1:
+        arrlist_a = arrlist_a.reshape(1, -1)
+    if len(arrlist_b.shape) == 1:
+        arrlist_b = arrlist_b.reshape(1, -1)
+    sims = np.zeros((1, len(arrlist_a) * len(arrlist_b)), dtype=float)
+    i = 0
+    for arr_a in arrlist_a:
+        for arr_b in arrlist_b:
+            sims[0][i] = simfunc(arr_a, arr_b)
+            i += 1
+    return sims
+
 def est_bf_intersect(bf_a, bf_b, k):
     return est_bf_elements(bf_a, k) + est_bf_elements(bf_b, k) - est_bf_union(bf_a, bf_b, k)
 
@@ -262,6 +280,26 @@ def calc_mae_jacc(a, ordered_sim_inds, target_sims, known_plaintexts, top_n=10):
         jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])**2
     return jacc_mae/(top_n*2)
 
+
+def calc_mae_dice(a, ordered_sim_inds, target_sims, known_plaintexts, top_n=10):
+    dice_mae = 0
+    for i in range(top_n):
+        overlap = len(a.intersection(known_plaintexts[ordered_sim_inds[i]]))
+        dice = (2*overlap)/(len(a)+len(known_plaintexts[ordered_sim_inds[i]]))
+        #jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])
+        dice_mae += abs(dice-target_sims[ordered_sim_inds[i]])
+
+    ordered_sim_inds = np.flip(ordered_sim_inds)
+    for i in range(top_n):
+        overlap = len(a.intersection(known_plaintexts[ordered_sim_inds[i]]))
+        dice = (2*overlap)/(len(a)+len(known_plaintexts[ordered_sim_inds[i]]))
+        #jacc_mae += abs(jacc-target_sims[ordered_sim_inds[i]])
+        dice_mae += abs(dice-target_sims[ordered_sim_inds[i]])
+
+    return dice_mae/(2*top_n)
+
+
+
 def guess_excl_ngr(target_sims, known_plaintexts, included_ngr, not_included_ngr=None, verbose=False):
     if not_included_ngr is None:
         not_included_ngr = set()
@@ -282,16 +320,40 @@ def pairwise_jaccard_bf(arrlist_a, arrlist_b, num_hash_func):
         arrlist_a = arrlist_a.reshape(1,-1)
     if len(arrlist_b.shape) == 1:
         arrlist_b = arrlist_b.reshape(1,-1)
-    ovls = np.zeros((1, len(arrlist_a)*len(arrlist_b)), dtype=float)
-    jaccs = np.zeros((1, len(arrlist_a)*len(arrlist_b)), dtype=float)
-    i = 0
-    for arr_a in arrlist_a:
-        arr_a_elem = round(est_bf_elem(arr_a, num_hash_func))
-        for arr_b in arrlist_b:
-            arr_b_elem = round(est_bf_elem(arr_b, num_hash_func))
-            union_elem = max(0, round(est_bf_elem(np.logical_or(arr_a, arr_b), num_hash_func)))
-            intersect_elem = max(0, round((arr_a_elem + arr_b_elem) - union_elem))
-            ovls[0][i] = intersect_elem
-            jaccs[0][i] = intersect_elem/union_elem
-            i += 1
-    return ovls, jaccs
+
+    assert arrlist_a.shape[1] == arrlist_b.shape[1]
+    assert arrlist_a.shape[0] == arrlist_b.shape[0] or arrlist_a.shape[0] == 1 or arrlist_b.shape[0] == 1
+    bf_len = arrlist_a.shape[1]
+
+    hamming_wt_a = np.sum(arrlist_a, axis=1)
+    hamming_wt_b = np.sum(arrlist_b, axis=1)
+    hamming_wt_a = -(bf_len / num_hash_func) * np.log(1 - (hamming_wt_a / bf_len))
+    hamming_wt_b = -(bf_len / num_hash_func) * np.log(1 - (hamming_wt_b / bf_len))
+    or_sum = np.sum(np.logical_or(arrlist_a, arrlist_b), axis=1)
+    or_sum = -(bf_len / num_hash_func) * np.log(1 - (or_sum / bf_len))
+    intersection = (hamming_wt_a + hamming_wt_b) - or_sum
+    intersection[intersection < 0] = 0
+    jacc_sims = intersection / or_sum
+    return jacc_sims
+
+def pairwise_dice_bf(arrlist_a, arrlist_b, num_hash_func):
+    if len(arrlist_a.shape) == 1:
+        arrlist_a = arrlist_a.reshape(1,-1)
+    if len(arrlist_b.shape) == 1:
+        arrlist_b = arrlist_b.reshape(1,-1)
+
+    assert arrlist_a.shape[1] == arrlist_b.shape[1]
+    assert arrlist_a.shape[0] == arrlist_b.shape[0] or arrlist_a.shape[0] == 1 or arrlist_b.shape[0] == 1
+    bf_len = arrlist_a.shape[1]
+
+    hamming_wt_a = np.sum(arrlist_a, axis=1)
+    hamming_wt_b = np.sum(arrlist_b, axis=1)
+    hamming_wt_a = -(bf_len / num_hash_func) * np.log(1 - (hamming_wt_a / bf_len))
+    hamming_wt_b = -(bf_len / num_hash_func) * np.log(1 - (hamming_wt_b / bf_len))
+    or_sum = np.sum(np.logical_or(arrlist_a, arrlist_b), axis=1)
+    or_sum = -(bf_len / num_hash_func) * np.log(1 - (or_sum / bf_len))
+    intersection = (hamming_wt_a + hamming_wt_b) - or_sum
+    intersection[intersection < 0] = 0
+    dice_sims = (2 * intersection) / (hamming_wt_a + hamming_wt_b)
+
+    return dice_sims

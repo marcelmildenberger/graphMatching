@@ -187,7 +187,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
-        alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True)
+        alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True,
+                                                        store_encs=GLOBAL_CONFIG["SaveAliceEncs"])
 
         del alice_data
 
@@ -293,7 +294,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
 
-        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True)
+        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
+                                                 store_encs=GLOBAL_CONFIG["SaveEveEncs"])
         del eve_data
 
         # Compute duration of Alice's encoding
@@ -668,13 +670,15 @@ if __name__ == "__main__":
     GLOBAL_CONFIG = {
         "Data": "./data/fakename_2k.tsv",
         "Overlap": 1,
-        "DropFrom": "Both",
+        "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "cosine",
         "Matching": "MinWeight",
-        "Workers": -1
+        "Workers": -1,
+        "SaveAliceEncs": True,
+        "SaveEveEncs": False
     }
 
     ENC_CONFIG = {
