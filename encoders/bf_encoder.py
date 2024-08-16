@@ -1,15 +1,18 @@
 # Encodes a given using bloom filters for PPRL
 import gc
+import os
 import pickle
 from typing import Sequence, AnyStr, List, Tuple, Any
 from .encoder import Encoder
 import numpy as np
 import hashlib
+import math
 from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
 from sklearn.metrics import pairwise_distances_chunked
+from joblib import Parallel, delayed
 
 def numpy_pairwise_combinations(x):
     # https://carlostgameiro.medium.com/fast-pairwise-combinations-in-numpy-c29b977c33e2
@@ -18,19 +21,43 @@ def numpy_pairwise_combinations(x):
     idx = np.stack(tmp, axis=-1)
     return x[idx]
 
-def test(uids):
-    dim = ((len(uids)*len(uids))-len(uids))//2
-    tmp = np.triu_indices(len(uids), k=1)
-    idx = np.zeros((dim, 2), dtype=np.float32)
-    idx[:,0] = uids[tmp[0]]
-    idx[:,1] = uids[tmp[1]]
-    return idx
 
+def calc_metrics(uids, enc, metric, sim, inds):
+    bf_length = enc.shape[1]
+
+    left_matr = enc[inds[:, 0]]
+    right_matr = enc[inds[:, 1]]
+
+    del enc
+    # Compute number of matching bits and overall bits
+    and_sum = np.sum(np.logical_and(left_matr, right_matr), axis=1)
+    # Adjust for length of BF
+    and_sum = np.log(1 - (and_sum / bf_length))
+
+    if metric == "jaccard":
+        or_sum = np.sum(np.logical_or(left_matr, right_matr), axis=1)
+        or_sum = np.log(1 - (or_sum / bf_length))
+        pw_metrics = and_sum / or_sum
+    else:
+        hamming_wt_right = np.sum(right_matr, axis=1)
+        hamming_wt_left = np.sum(left_matr, axis=1)
+        hamming_wt_right = np.log(1 - (hamming_wt_right / bf_length))
+        hamming_wt_left = np.log(1 - (hamming_wt_left / bf_length))
+        pw_metrics = 2 * and_sum / (hamming_wt_left + hamming_wt_right)
+
+    if not sim:
+        pw_metrics = 1 - pw_metrics
+
+    metrics_with_uids = np.zeros((len(inds), 3), dtype=np.float32)
+    metrics_with_uids[:, 0] = uids[inds[:, 0]]
+    metrics_with_uids[:, 1] = uids[inds[:, 1]]
+    metrics_with_uids[:, 2] = pw_metrics
+    return metrics_with_uids
 class BFEncoder(Encoder):
 
     def __init__(self, secret: AnyStr, filter_size: int, bits_per_feature: Union[int, Sequence[int]],
                  ngram_size: Union[int, Sequence[int]], diffusion=False, eld_length = None,
-                 t = None):
+                 t = None, workers=-1):
         """
         Constuctor for the BFEncoder class.
         :param secret: Secret to be used in the HMAC
@@ -53,13 +80,13 @@ class BFEncoder(Encoder):
         self.eld_length = eld_length
         self.t = t
         self.indices = None
+        self.workers = os.cpu_count() if workers == -1 else workers
 
         if diffusion:
             assert eld_length is not None, "ELD length must be specified if diffusion is enabled"
             assert t is not None, "Number of XORed bits must be specified if diffusion is enabled"
             assert self.t <= self.filter_size, "Cannot select more bits for XORing than are present in the BF!"
-            # Generate t random random indices per bit in the diffused BF. Bits at this position of the BF are XORed
-            # to set the bit in the diffused BF.
+
             if type(self.secret) == str:
                 random_seed = int(hashlib.md5(self.secret.encode()).hexdigest(), 16) % (2 ** 32 - 1)
             else:
@@ -67,6 +94,8 @@ class BFEncoder(Encoder):
             np.random.seed(random_seed)
             self.indices = []
             available_indices = np.arange(self.filter_size)
+            # Generate t random random indices per bit in the diffused BF. Bits at this position of the BF are XORed
+            # to set the bit in the diffused BF. Refer to Algorithm 1 in the paper
             for j in range(self.eld_length):
                 if available_indices.shape[0] >= self.t:
                     tmp = np.random.choice(available_indices, size=self.t, replace=False)
@@ -167,11 +196,7 @@ class BFEncoder(Encoder):
         :return: The similarities/distances as a list of tuples: [(i,j,val),...], where i and j are the indices of
         the records in data and val is the computed similarity/distance.
         """
-        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
-                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
-                             "matching",
-                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
-                             "sqeuclidean", "yule"]
+        available_metrics = ["dice", "jaccard"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
         #print("DEB: Encoding")
@@ -183,45 +208,15 @@ class BFEncoder(Encoder):
             with open("./data/encodings/encoding_dict.pck", "wb") as f:
                 pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
 
-        # Calculates pairwise distances between the provided data points
-        if sim:
-            vals = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1)
-        else:
-            vals = pairwise_distances_chunked(enc, metric=metric, n_jobs=-1)
+        uids = np.array(uids)
+        # Compute all possible unique combinations of indices and split them to as many sub-lists as workers
+        ind_combinations = np.array_split(numpy_pairwise_combinations(np.arange(enc.shape[0])), self.workers)
 
-        vals = np.vstack(list(vals), dtype=np.float32)
-        del enc, data
-        gc.collect()
-        #print("Subset")
-        # Since we're comparing the values to themselves, we only need the values above the main diagonal
-        # Otherwise we would have two edges per node-pair in the graph
-        # lower_tri = np.tri(vals.shape[0], k=0, dtype=bool)
-        vals = vals[np.invert(np.tri(vals.shape[0], k=0, dtype=bool))]
-        gc.collect()
-        #print("Sim")
-        if sim:
-            vals = 1-vals
-        gc.collect()
+        parallel = Parallel(n_jobs=self.workers)
+        output_generator = parallel(
+            delayed(calc_metrics)(uids, enc, metric, sim, inds) for inds in ind_combinations)
 
-        #print("Uids")
-        # Compute the unique combinations of uids...
-        uids = test(np.array(uids, dtype=int))
-        gc.collect()
-
-        #print("Re")
-        #dim = ((len(uids)*len(uids))-len(uids))//2
-        re = np.zeros((len(uids), 3), dtype=np.float32)
-
-        #print("Add")
-        re[:,2] = vals
-        del vals
-        gc.collect()
-
-        #print("Add UIDs")
-        re[:,0:2] = uids
-        gc.collect()
-        #...and add the metrics
-        return re
+        return np.vstack(output_generator)
 
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 
