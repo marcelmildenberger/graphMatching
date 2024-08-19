@@ -24,7 +24,7 @@ def procrustes(X_src, Y_tgt):
 
 class WassersteinAligner:
 
-    def __init__(self, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, vocab_size, lr_decay,
+    def __init__(self, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, lr_decay,
                  apply_sqrt, early_stopping, seed=42, verbose=True, min_epsilon=0.005):
         # np.random.seed(seed)
         self.reg_init = reg_init
@@ -34,7 +34,6 @@ class WassersteinAligner:
         self.n_iter_ws = n_iter_ws
         self.n_iter_init = n_iter_init
         self.n_epoch = n_epoch
-        self.vocab_size = vocab_size
         self.lr_decay = lr_decay
         self.apply_sqrt = apply_sqrt
         self.early_stopping = early_stopping
