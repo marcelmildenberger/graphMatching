@@ -120,7 +120,7 @@ class NetMFEmbedder():
             ordering = list(self.indexdict.keys())
             random.shuffle(ordering)
         embeddings = [self.emb_matrix[self.indexdict[k]] for k in ordering]
-        embeddings = np.stack(embeddings, axis=0, dtype=np.float32)
+        embeddings = np.stack(embeddings, axis=0)
         return embeddings, ordering
 
     def get_vector(self, key: Union[int, str]) -> np.ndarray:
