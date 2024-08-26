@@ -665,10 +665,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
 
 if __name__ == "__main__":
-    # Some global parameters
+    # Parameters for running the GMA
+    # See ./parameters.md for details.
 
     GLOBAL_CONFIG = {
-        "Data": "./data/fakename_2k.tsv",
+        "Data": "./data/titanic_full.tsv",
         "Overlap": 1,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
@@ -677,16 +678,16 @@ if __name__ == "__main__":
         "MatchingMetric": "cosine",
         "Matching": "MinWeight",
         "Workers": -1,
-        "SaveAliceEncs": True,
+        "SaveAliceEncs": False,
         "SaveEveEncs": False
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "BloomFilter",
+        "AliceAlgo": "TwoStepHash",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
-        "EveAlgo": "BloomFilter",
+        "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,
         "EveMetric": "dice",
@@ -706,8 +707,8 @@ if __name__ == "__main__":
         "AliceNHashBits": 64,
         "AliceNSubKeys": 8,
         "Alice1BitHash": True,
-        "EveNHash": 2000,
-        "EveNHashBits": 32,
+        "EveNHash": 1024,
+        "EveNHashBits": 64,
         "EveNSubKeys": 8,
         "Eve1BitHash": True,
         # For 2SH encoding
@@ -736,14 +737,14 @@ if __name__ == "__main__":
         # For Node2Vec
         "AliceWalkLen": 100,
         "AliceNWalks": 20,
-        "AliceP": 250, #0.5
-        "AliceQ": 300,    #2z
+        "AliceP": 250,
+        "AliceQ": 300,
         "AliceEpochs": 5,
         "AliceSeed": 42,
         "EveWalkLen": 100,
         "EveNWalks": 20,
-        "EveP": 250, #0.5
-        "EveQ": 300, #2
+        "EveP": 250,
+        "EveQ": 300,
         "EveEpochs": 5,
         "EveSeed": 42
     }
@@ -756,7 +757,7 @@ if __name__ == "__main__":
         "NIterWS": 20,
         "NIterInit": 5 ,  # 800
         "NEpochWS": 100,
-        "LRDecay": 0.999,
+        "LRDecay": 1,
         "Sqrt": True,
         "EarlyStopping": 10,
         "Selection": "None",
