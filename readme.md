@@ -46,6 +46,6 @@ If you don't have any suitable datasets yet, you may use the ones from the paper
 
 ## 3. Run the Experiment
 Open the file ``main.py`` in a text editor of your choice. Scroll down to the bottom of the file.
-There, you will find four dictionaries storing the configuration and parameters.
+There, you will find four dictionaries storing the [configuration and parameters](./parameters.md).
 Adjust the parameters to your liking, save the file and run ``main.py``.
 If you set the verbose-option to True, detailed status reports will be printed on screen.
