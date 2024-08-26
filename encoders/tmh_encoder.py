@@ -83,8 +83,8 @@ class TMHEncoder():
         self.one_bit_hash = one_bit_hash
         self.workers = os.cpu_count() if workers == -1 else workers
 
-        assert 64 % num_sub_keys == 0
-        assert num_hash_bits in [8, 16, 32, 64]
+        assert 64 % num_sub_keys == 0, "Number of subkeys must be divisor of 64."
+        assert num_hash_bits in [8, 16, 32, 64], "Number of bit per hash must be 8, 16, 34 or 64."
 
         if self.subkey_length == 16:
             self.subkey_dtype = np.uint16
