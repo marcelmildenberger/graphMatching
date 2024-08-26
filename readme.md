@@ -23,8 +23,10 @@ should be enough. Make sure that your GPU has a [compute capability](https://dev
 
 #### 0.1 Install System Dependencies
 1) Run ``nvidia-smi`` to check if you have a GPU driver installed. If not, install the [latest version](https://www.nvidia.com/download/index.aspx).
-2) Make sure that you have ``pkg-config`` installed. Otherwise the installation of matplotlib will fail. On Ubuntu/Debian run ``sudo apt install pkg-config``
-3) Install the [oneAPI Math Kernel Library](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html). On Ubuntu run ``sudo apt install intel-mkl``.
+2) Make sure that you have ``pkg-config`` installed. Otherwise, the installation of matplotlib might fail. On Ubuntu/Debian run ``sudo apt install pkg-config``
+3) Install FreeType.  On Ubuntu/Debian run ``sudo apt install libfreetype6-dev``
+4) Install the g++ compiler ``sudo apt install g++`` for improved performance.
+5) Install the [oneAPI Math Kernel Library](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html). On Ubuntu run ``sudo apt install intel-mkl``.
 
 ## 1. Install Python Dependencies
 We recommend using a [virtual environment](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/)
