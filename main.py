@@ -1,4 +1,3 @@
-import hashlib
 import os
 import hickle as hkl
 import pickle
