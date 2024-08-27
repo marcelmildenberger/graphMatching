@@ -36,6 +36,8 @@ class MinWeightMatcher():
 
 
 class GaleShapleyMatcher():
+    # Partially based on
+    # https://johnlekberg.com/blog/2020-08-22-stable-matching.html
     def __init__(self, metric: str = "cosine", workers: int = -1):
         available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
                              "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
