@@ -6,7 +6,7 @@ This repository contains the accompanying code for the paper
 
 that is currently under peer review. 
 Please follow the instructions below to set up your system.
-There are dedicated guides to [reproduce](./docs/reproduction.md) or [extend](./data/extension.md) our work.
+There are dedicated guides to [reproduce](./docs/reproduction.md) or [extend](./docs/extension.md) our work.
 ___
 ## System Requirements
 Due do substantially improved performance, we strongly recommend to run the experiments
@@ -31,7 +31,7 @@ for a bare-metal install [here.](./docs/plain_install.md)
 4) Run ``docker run -it --gpus all --name gma-artifact gma:1.0`` in your terminal.
 5) That's it!
 
-If everything worked, you should now see a shell connected to your docker container. It looks somethin like
+If everything worked, you should now see a shell connected to your docker container. It looks something like
 
 ``root@bfeff35dda4a:/usr/app# ``
 
@@ -50,7 +50,6 @@ resume working with the container you already created.
 
 **A note for Windows users:** Make sure to select WSL2 as the subsystem for Docker, otherwise
 you won't be able to use the GPU.
-
 ___
 ## Prepare your Dataset
 The code expects a tab-separated file with one record per row. The fist row must be a 
@@ -64,6 +63,18 @@ The script will guide you through the process.
 
 In the `data` directory, this repository already provides `titanic_full.tsv` which can be used
 directly to run the experiments.
+___
+## Move your Data
+Our script expects data to be located in the `./data` directory. Move your prepared datasets there.
+
+If you are using docker, you can copy your data ***to*** the container like this:
+
+``docker cp YOUR_DATA.tsv gma-artifact:/usr/app/data/``
+
+You can also move data, e.g. benchmark results, ***from*** the container:
+
+``docker cp gma-artifact:/usr/app/data/YOUR_DATA.tsv ./``
+
 
 ___
 ## Run the Code
