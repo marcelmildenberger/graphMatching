@@ -754,7 +754,7 @@ if __name__ == "__main__":
         "RegInit":1, # For BF 0.25
         "Batchsize": 1, # 1 = 100%
         "LR": 200.0,
-        "NIterWS": 20,
+        "NIterWS": 100,
         "NIterInit": 5 ,  # 800
         "NEpochWS": 100,
         "LRDecay": 1,
