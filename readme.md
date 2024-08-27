@@ -9,7 +9,7 @@ Please follow the instructions below to set up your system.
 There are dedicated guides to [reproduce](./docs/reproduction.md) or [extend](./docs/extension.md) our work.
 ___
 ## System Requirements
-Due do substantially improved performance, we strongly recommend to run the experiments
+Due to substantially improved performance, we strongly recommend to run the experiments
 on a server equipped with a GPU. The larger the datasets you want to run our code on,
 the more powerful the system has to be. To fully replicate our results you will need:
 - \>= 400 GB of RAM
