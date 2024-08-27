@@ -6,9 +6,9 @@ This repository contains the accompanying code for the paper
 
 *Revisiting Graph Matching Attacks on Privacy-Preserving Record Linkage*
 
-that is currently in peer review. If you want to replicate or extend our results, please follow the instructions below.
+that is currently under peer review. If you want to replicate or extend our results, please follow the instructions below.
 ___
-## 0. System Requirements
+## System Requirements
 Due do substantially improved performance, we strongly recommend to run the experiments
 on a server equipped with a GPU. The larger the datasets you want to run our code on,
 the more powerful the system has to be. To fully replicate our results you will need:
@@ -18,21 +18,46 @@ the more powerful the system has to be. To fully replicate our results you will 
 
 If you limit your experiments to smaller datasets (<= 5,000 records), computations can be run on CPU and with around 32 GB of ram. A powerful laptop
 should be enough.  
+___
+## Set up the Environment
+We recommend running our code in a Docker container, as this means you won't have to worry about
+dependencies or version conflicts.
+If you prefer to run the code directly on your machine, you can find instructions
+for a bare-metal install [here.](./docs/plain_install.md)
 
-**Note:** While the code itself should be platform independent, we recommend running it on GNU/Linux. The code has been tested on Ubuntu 22.04 LTS only.
+1) Install Docker by following the [official instructions](https://docs.docker.com/get-started/get-docker/).
+2) Open a terminal, navigate to this repository and run ``docker build -t gma:1.0 ./``.
+3) Wait a few minutes while Docker builds the image.
+4) Run ``docker run -it --gpus all --name gma-artifact gma:1.0`` in your terminal.
+5) That's it!
 
-#### 0.1. Install System Dependencies
-1) Run ``nvidia-smi`` to check if you have a GPU driver installed. If not, install the [latest version](https://www.nvidia.com/download/index.aspx).
-2) Make sure that you have ``pkg-config`` and FreeType installed. Otherwise, the installation of matplotlib might fail. On Ubuntu/Debian run ``sudo apt install pkg-config libfreetype6-dev``
-3) Install the g++ compiler for improved performance. On Ubuntu run ``sudo apt install g++``
-4) Install the [oneAPI Math Kernel Library](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html). On Ubuntu run ``sudo apt install intel-mkl``.
+If everything worked, you should now see a shell connected to your docker container. It looks somethin like
 
-## 1. Install Python Dependencies
-We recommend using a [virtual environment](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/)
-for package management to avoid version conflicts.
-1) Install [PyTorch](https://pytorch.org/get-started/locally/). Choose the latest (highest) CUDA version. 
-2) Run ``pip install -r requirements.txt`` to install the remaining dependencies.
-3) [Verify](https://pytorch.org/get-started/locally/#linux-verification) your install.
+``root@bfeff35dda4a:/usr/app# ``
+
+Type ``ls`` to view the contents of the directory you're currently in. The output should look like this:
+````angular2html
+'Benchmark Results'   aligners       docs        main.py    preprocessing.py   utils.py
+ Dockerfile           benchmark.py   embedders   matchers   readme.md          __pycache__
+ data                 encoders       requirements.txt
+ ````
+You can interact with the docker container just like with any other Linux OS.
+
+**Note:** ``docker run`` will always create a new docker container, so you do not have access
+to any files you created in previous runs. Use ``docker start -i gma-artifact`` instead to
+resume working with the container you already created.
+
+**A note for Windows users:** Make sure to select WSL2 as the subsystem for Docker, otherwise
+you won't be able to use the GPU.
+___
+## How to Run the Code
+You can run your own experiments by editing the ``main.py`` file. To do so, open the file in a text editor like [Nano](https://linuxize.com/post/how-to-use-nano-text-editor/#opening-and-creating-files): ``nano main.py``.
+Scroll down to the bottom of the file.
+There, you will find four dictionaries storing the [configuration and parameters](./docs/parameters.md).
+Adjust the parameters to your liking, save the file and start the experiment via ``python main.py``.
+If you set the verbose-option to True, detailed status reports will be printed on screen.
+
+To exit the docker container, simply type ``exit`` into the terminal and hit enter.
 
 
 ## 2. Create Dataset
@@ -42,12 +67,6 @@ If you don't have any suitable datasets yet, you may use the ones from the paper
 - [Titanic Passenger List](https://en.wikipedia.org/wiki/Passengers_of_the_Titanic#Passenger_list)
 - [Euro Census](https://wayback.archive-it.org/12090/20231221144450/https://cros-legacy.ec.europa.eu/content/job-training_en)
 - [North Carolina Voter Registry](https://www.ncsbe.gov/results-data/voter-registration-data)
-
-## 3. Run the Experiment
-Open the file ``main.py`` in a text editor of your choice. Scroll down to the bottom of the file.
-There, you will find four dictionaries storing the [configuration and parameters](./parameters.md).
-Adjust the parameters to your liking, save the file and run ``main.py``.
-If you set the verbose-option to True, detailed status reports will be printed on screen.
 
 ___
 ## How to Reproduce our Results
@@ -91,12 +110,7 @@ system specification you might face runtimes in excess of several weeks.
 
 ### Reproduce Plots
 Once the benchmark is complete, you can generate the result plots used in our paper.
-This will require an installation of the programming language [*R*](https://www.r-project.org/).
-On Ubuntu, you can install R via
-
-``sudo apt install r-base``
-
-Next, simply generate the plots by running
+Simply generate the plots by running
 
 ``Rscript create_plots.R``
 
