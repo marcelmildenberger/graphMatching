@@ -42,6 +42,7 @@ Type ``ls`` to view the contents of the directory you're currently in. The outpu
  data                 encoders       requirements.txt
  ````
 You can interact with the docker container just like with any other Linux OS.
+To exit the docker container, simply type ``exit`` into the terminal and hit enter.
 
 **Note:** ``docker run`` will always create a new docker container, so you do not have access
 to any files you created in previous runs. Use ``docker start -i gma-artifact`` instead to
@@ -49,36 +50,40 @@ resume working with the container you already created.
 
 **A note for Windows users:** Make sure to select WSL2 as the subsystem for Docker, otherwise
 you won't be able to use the GPU.
+
+## Prepare your Dataset
+The code expects a tab-separated file with one record per row. The fist row must be a 
+header specifying the column names.
+You may include an arbitrary number of columns. Internally, the values stored in the
+columns are concatenated according to column ordering and normalized (switch to lowercase, remove whitespace and missing values).
+**The last column must contain a unique ID.**
+
+If you have data in `.csv`, `.xls` or `.xlsx` format, you may run ``python preprocessing.py`` for convenient conversion. 
+The script will guide you through the process. 
+
+In the `data` directory, this repository already provides `titanic_full.tsv` which can be used
+directly to run the experiments.
+
 ___
-## How to Run the Code
+## Run the Code
 You can run your own experiments by editing the ``main.py`` file. To do so, open the file in a text editor like [Nano](https://linuxize.com/post/how-to-use-nano-text-editor/#opening-and-creating-files): ``nano main.py``.
 Scroll down to the bottom of the file.
 There, you will find four dictionaries storing the [configuration and parameters](./docs/parameters.md).
 Adjust the parameters to your liking, save the file and start the experiment via ``python main.py``.
 If you set the verbose-option to True, detailed status reports will be printed on screen.
 
-To exit the docker container, simply type ``exit`` into the terminal and hit enter.
-
-
-## 2. Create Dataset
-Prepare your dataset by running ``preprocessing.py``. The script will guide you through the process.
-If you don't have any suitable datasets yet, you may use the ones from the paper:
-- [Fake Name Generator](https://www.fakenamegenerator.com/order.php)
-- [Titanic Passenger List](https://en.wikipedia.org/wiki/Passengers_of_the_Titanic#Passenger_list)
-- [Euro Census](https://wayback.archive-it.org/12090/20231221144450/https://cros-legacy.ec.europa.eu/content/job-training_en)
-- [North Carolina Voter Registry](https://www.ncsbe.gov/results-data/voter-registration-data)
-
 ___
-## How to Reproduce our Results
+## Interpret the Results
 
-To reproduce the results we reported in our paper, you may simply run
-
-``python3 benchmark.py``
-
-This will run all experiments reported in Chapter 6 and save the results in the ``./data`` directory.
-Benchmark results are tab-separated and contain the results of one experiment per row. The first row is a header,
-specifying which values are reported in the respective column. Aside from dumps of the
-config dictionaries, the result files include the following performance metrics:
+Upon attack completion, a short status message will be printed:
+```
+Correct: 9998 of 10000
+Success rate: 0.999800
+```
+This will tell you how many plaintext records were correctly matched to their
+encoded counterparts.
+If you set the ``BenchMode`` parameter to true, a row with the following, more detailed
+information will be added to `./data/benchmark.tsv`.
 
 | Value              | Description                                                                                                                           |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------|
@@ -94,6 +99,19 @@ config dictionaries, the result files include the following performance metrics:
 | elapsed_align_prep | Duration of preparing the data for alignment (seconds). Should be close to 0 unless the *MaxLoad* parameter was set.                  |
 | elapsed_align      | Duration of computing alignment (seconds).                                                                                            |
 | elapsed_mapping    | Time elapsed since the beginning of the embedding stage (seconds). This is the actual attack duration, as encoding is done by victim. |             
+
+___
+
+## Reproduce our Results
+
+To reproduce the results we reported in our paper, you may simply run
+
+``python3 benchmark.py``
+
+This will run all experiments reported in Chapter 6 and save the results in the ``./data`` directory.
+Benchmark results are tab-separated and contain the results of one experiment per row. The first row is a header,
+specifying which values are reported in the respective column. Aside from dumps of the
+config dictionaries, the result files include the following performance metrics:
 
 
 The dumps of the config dictionaries are generated dynamically, i.e. the order
