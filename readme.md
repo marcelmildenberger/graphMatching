@@ -66,7 +66,7 @@ config dictionaries, the result files include the following performance metrics:
 | success_rate       | Number of correctly matched records divided by number of overlapping records.                                                         |
 | correct            | Absolute number of correctly matched records.                                                                                         |
 | n_alice            | Number of records in Alice's dataset.                                                                                                 |
-| n_eve              | Number of records in Eve'#'s dataset.                                                                                                 |
+| n_eve              | Number of records in Eve's dataset.                                                                                                   |
 | elapsed_total      | Time elapsed since start of script (seconds)                                                                                          |
 | elapsed_alice_enc  | Duration of encoding and similarity calculation (edgeweights) for Alice's data (seconds). Is set to -1 if cached encodings were used. |
 | elapsed_eve_enc    | Duration of encoding and similarity calculation (edgeweights) for Eve's data (seconds). Is set to -1 if cached encodings were used.   |
