@@ -102,4 +102,5 @@ information will be added to `./data/benchmark.tsv`.
 | elapsed_mapping    | Time elapsed since the beginning of the embedding stage (seconds). This is the actual attack duration, as encoding is done by victim. |             
 
 ___
-
+## License
+This code is licensed under [GPLv3](https://github.com/SchaeferJ/graphMatching/blob/master/LICENSE.txt)
