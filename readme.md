@@ -1,12 +1,12 @@
 # Graph Matching Attacks Against Privacy-Preserving Record Linkage
 ___
-**THIS IS WORK IN PROGRESS. DOCUMENTATION MAY BE INCOMPLETE, INCORRECT OR OUTDATED!**
-
 This repository contains the accompanying code for the paper
 
 *Revisiting Graph Matching Attacks on Privacy-Preserving Record Linkage*
 
-that is currently under peer review. If you want to replicate or extend our results, please follow the instructions below.
+that is currently under peer review. 
+Please follow the instructions below to set up your system.
+There are dedicated guides to [reproduce](./docs/reproduction.md) or [extend](./data/extension.md) our work.
 ___
 ## System Requirements
 Due do substantially improved performance, we strongly recommend to run the experiments
@@ -102,34 +102,3 @@ information will be added to `./data/benchmark.tsv`.
 
 ___
 
-## Reproduce our Results
-
-To reproduce the results we reported in our paper, you may simply run
-
-``python3 benchmark.py``
-
-This will run all experiments reported in Chapter 6 and save the results in the ``./data`` directory.
-Benchmark results are tab-separated and contain the results of one experiment per row. The first row is a header,
-specifying which values are reported in the respective column. Aside from dumps of the
-config dictionaries, the result files include the following performance metrics:
-
-
-The dumps of the config dictionaries are generated dynamically, i.e. the order
-of columns changes based on the order of the keys in the dictionary.
-
-**Note:** Several parts of the attack, most importantly encoding, embedding and
-alignment, involve randomness. It is thus extremely unlikely that you are able to
-perfectly reproduce our results. However, the overall difference in results should be
-negligible.
-
-**Another Note:** Re-Running all experiments will take a considerable amount of time. Depending on your
-system specification you might face runtimes in excess of several weeks.
-
-
-### Reproduce Plots
-Once the benchmark is complete, you can generate the result plots used in our paper.
-Simply generate the plots by running
-
-``Rscript create_plots.R``
-
-which will save the result plots in the ``./plots`` directory as ``.eps`` files. 
