@@ -36,7 +36,7 @@ If everything worked, you should now see a shell connected to your docker contai
 ``root@bfeff35dda4a:/usr/app# ``
 
 Type ``ls`` to view the contents of the directory you're currently in. The output should look like this:
-````angular2html
+````
 'Benchmark Results'   aligners       docs        main.py    preprocessing.py   utils.py
  Dockerfile           benchmark.py   embedders   matchers   readme.md          __pycache__
  data                 encoders       requirements.txt
@@ -51,6 +51,7 @@ resume working with the container you already created.
 **A note for Windows users:** Make sure to select WSL2 as the subsystem for Docker, otherwise
 you won't be able to use the GPU.
 
+___
 ## Prepare your Dataset
 The code expects a tab-separated file with one record per row. The fist row must be a 
 header specifying the column names.
