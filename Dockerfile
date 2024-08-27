@@ -8,7 +8,8 @@ RUN apt update && \
         libfreetype6-dev \
         g++ \
         intel-mkl \
-        r-base
+        r-base \
+        nano
 
 # Copy Code
 COPY ./ /usr/app/
