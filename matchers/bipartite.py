@@ -3,7 +3,10 @@ from collections import deque
 from scipy.optimize import linear_sum_assignment
 from sklearn.metrics.pairwise import pairwise_distances
 
-class MinWeightMatcher():
+from .matcher import Matcher
+
+
+class MinWeightMatcher(Matcher):
 
     def __init__(self, metric: str = "cosine", workers: int = -1):
         available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
@@ -34,8 +37,7 @@ class MinWeightMatcher():
         return mapping
 
 
-
-class GaleShapleyMatcher():
+class GaleShapleyMatcher(Matcher):
     # Partially based on
     # https://johnlekberg.com/blog/2020-08-22-stable-matching.html
     def __init__(self, metric: str = "cosine", workers: int = -1):
@@ -79,6 +81,7 @@ class GaleShapleyMatcher():
                     pair[b] = a
 
         return pair
+
     def match(self, alice_data, alice_uids, eve_data, eve_uids):
         smaller_data = alice_data if len(alice_uids) < len(eve_uids) else eve_data
         larger_data = alice_data if len(alice_uids) >= len(eve_uids) else eve_data
@@ -105,7 +108,7 @@ class GaleShapleyMatcher():
         return dict((v,k) for k,v in matching.items())
 
 
-class SymmetricMatcher():
+class SymmetricMatcher(Matcher):
     def __init__(self, metric: str = "cosine", workers: int = -1):
         available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
                              "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
