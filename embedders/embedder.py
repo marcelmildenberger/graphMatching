@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Union
 import numpy as np
 
+
 class Embedder(ABC):
 
     @abstractmethod

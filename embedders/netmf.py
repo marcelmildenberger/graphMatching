@@ -10,8 +10,10 @@ from aesara import tensor as T
 import networkx as nx
 from typing import List, Union, Tuple
 import pandas as pd
+from .embedder import Embedder
 
-class NetMFEmbedder():
+
+class NetMFEmbedder(Embedder):
 
     def __init__(self, dim_embeddings, context_size, negative, normalize):
         self.indexdict = None
