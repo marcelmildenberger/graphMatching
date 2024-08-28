@@ -665,7 +665,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
 if __name__ == "__main__":
     # Parameters for running the GMA
-    # See ./parameters.md for details.
+    # See ./docs/parameters.md for details.
 
     GLOBAL_CONFIG = {
         "Data": "./data/titanic_full.tsv",
