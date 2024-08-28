@@ -145,5 +145,18 @@ ___
 | MaxLoad        | Specifies the number of elements to use for alignment if *Selection* is not None. Must be smaller than the number of records in the smaller dataset.                                                                                                                                                              | None                |                                                  |
 | Wasserstein    | If True, uses unsupervised Wasserstein Procrustes for alignment. If False, uses supervised closed-form Procrustes.                                                                                                                                                                                                | True                |                                                  |
 
+___
+## Blocking Configuration
+**Argument Name:** ``BLOCKING_CONFIG``
+
+**Blocking is only performed in the re-implementation of Vidanage et al.'s attack.
+Thus, the `BLOCKING_CONFIG` parameter is not present otherwise**
 
 
+| Parameter Name  | Description                                | Default | Reference                                            |
+|-----------------|--------------------------------------------|---------|------------------------------------------------------|
+| Disable         | If true, then the blocking step is skipped | False   |                                                      |
+| PlainSampleSize | The length of the min-hash bands.          | 4       | [Broder](https://doi.org/10.1109/SEQUEN.1997.666900) |
+| PlainNumSamples | The number of LSH bands.                   | 50      | [Broder](https://doi.org/10.1109/SEQUEN.1997.666900) |
+| AliceRandomSeed | Random Seed used for blocking Alice's data | 42      |                                                      |
+| EveRandomSeed   | Random Seed used for blocking Eve's data   | 17      |                                                      |
