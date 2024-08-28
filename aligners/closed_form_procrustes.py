@@ -1,6 +1,6 @@
 # Implements a solution to the closed form procrustes problem, i.e. aligning vector spaces with parallel data as
 # ground truth. Will be used for evaluation purposes only.
-
+from .aligner import Aligner
 import numpy as np
 
 def normalized(a, axis=-1, order=2):
@@ -10,7 +10,7 @@ def normalized(a, axis=-1, order=2):
     return a / np.expand_dims(l2, axis)
 
 
-class ProcrustesAligner:
+class ProcrustesAligner(Aligner):
 
     def __init__(self):
         pass
