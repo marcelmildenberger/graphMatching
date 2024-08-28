@@ -137,7 +137,8 @@ class StartupScreen(Screen):
                 ".",
                 filters=Filters(
                     ("CSV", lambda p: p.suffix.lower() == ".csv"),
-                    ("Any", lambda _: True),
+                    ("XLS", lambda p: p.suffix.lower() == ".xls"),
+                    ("XLSX", lambda p: p.suffix.lower() == ".xlsx"),
                 ),
             ),
             callback=self.process_selection,
@@ -153,7 +154,11 @@ class StartupScreen(Screen):
             self.query_one(Label).update("Cancelled")
         else:
             self.app.open_path = str(to_show)
-            self.app.loaded_df = pd.read_csv(self.app.open_path)
+            ftype = str(to_show).split(".")[-1]
+            if ftype.lower() == "csv":
+                self.app.loaded_df = pd.read_csv(self.app.open_path)
+            else:
+                self.app.loaded_df = pd.read_excel(self.app.open_path)
             self.app.data_rows = self.app.loaded_df.values.tolist()
             self.app.data_cols = self.app.loaded_df.columns.tolist()
             # self.app.uid_col = data.columns.tolist()[0]
