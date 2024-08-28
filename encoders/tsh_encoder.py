@@ -6,6 +6,7 @@ import pickle
 import numpy as np
 from hashlib import sha256
 from joblib import Parallel, delayed
+from .encoder import Encoder
 
 
 # =============================================================================
@@ -78,7 +79,7 @@ def make_inds(i_vals, numex):
     return np.vstack(tmp1, dtype=np.uint32)
 
 
-class TSHEncoder():
+class TSHEncoder(Encoder):
     """A class that implements a column-based vector hashing approach for PPRL
        to encode strings into integer hash value sets.
     """
