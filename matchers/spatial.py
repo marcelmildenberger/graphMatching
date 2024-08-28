@@ -1,7 +1,8 @@
 from sklearn.neighbors import NearestNeighbors
-import numpy as np
+from .matcher import Matcher
 
-class NNMatcher():
+
+class NNMatcher(Matcher):
     def __init__(self, metric: str = "cosine", workers: int = -1):
         available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
                              "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
