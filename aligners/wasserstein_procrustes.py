@@ -1,7 +1,7 @@
 # Based on: https://github.com/facebookresearch/fastText/blob/master/alignment/unsup_align.py
 # and https://github.com/facebookresearch/fastText/blob/master/alignment/utils.py
 
-
+from .aligner import Aligner
 import time, math, ot
 import torch
 from tqdm import trange
@@ -17,7 +17,7 @@ def procrustes(X_src, Y_tgt):
     return torch.matmul(U, V)
 
 
-class WassersteinAligner:
+class WassersteinAligner(Aligner):
 
     def __init__(self, reg_init, reg_ws, batchsize, lr, n_iter_init, n_iter_ws, n_epoch, lr_decay,
                  apply_sqrt, early_stopping, seed=42, verbose=True, min_epsilon=0.005):
