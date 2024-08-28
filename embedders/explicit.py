@@ -14,6 +14,10 @@ def ret_zero():
 
 
 class ExplicitEmbedder():
+    """
+    This is a re-implementation of the algorithm Vidanage et al. (https://doi.org/10.1145/3340531.3411931)
+    used to create node embeddings.
+    """
 
     def __init__(self, graph, encodings, uids, min_component_size=None, verbose=False):
         self.encodings = encodings
@@ -55,6 +59,11 @@ class ExplicitEmbedder():
                 self.num_nodes, self.num_edges, self.max_degree))
 
     def __enforce_component_size(self):
+        """
+        Drops all connected components that are smaller than the minimum connected component size defined during
+        initialization.
+        :return: None
+        """
 
         conn_comp = list(nx.connected_components(self.G))
         small_comp = [comp for comp in conn_comp if len(comp) < self.min_component_size]
@@ -76,7 +85,7 @@ class ExplicitEmbedder():
         Initializes the dictionaries that contain information on node length (i.e. the number of 1-bits in the
         Bloom Filter or the Integer/q-gram Set size) and node frequency (i.e. how often a given q-gram/integer set or
         BF encoding occurs in the encoded database)
-        :return:
+        :return: None
         """
 
         # If the encodings are stored in a Numpy array, set the length to the number of non-zero elements.
