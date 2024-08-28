@@ -1,4 +1,4 @@
-## Reproduce our Results
+# Reproduce our Experiments
 These are the steps required to reproduce the results we reported in Chapter 6 and Table 4 (Appendix A) of our paper, including the plots of the success rates.
 
 **Note:** Several parts of the attack, most importantly encoding, embedding and
@@ -12,7 +12,7 @@ This is due to the large number of parameter combinations for the *BFD* encoding
 To skip this step, edit line 102 of `benchmark.py` and set it to `diffuse = [False]`.
 ___
 ### Obtain Datasets
-Make sure that you have all required datasets in the  `./data` dictionary.
+Make sure that you have all required datasets in the  `./data` directory.
 The code expects the following files to be present:
 
 ```
@@ -35,7 +35,7 @@ To reproduce the results we reported in our paper, you may simply run
 This will run all experiments reported in Chapter 6 and save the results in the ``./data`` directory.
 Benchmark results are tab-separated and contain the results of one experiment per row. The first row is a header,
 specifying which values are reported in the respective column. Aside from dumps of the
-config dictionaries, the result files include the following performance metrics:
+config dictionaries, the result files include detailed performance metrics.
 
 
 The dumps of the config dictionaries are generated dynamically, i.e. the order
@@ -48,3 +48,17 @@ Simply generate the plots by running
 ``Rscript create_plots.R``
 
 which will save the result plots in the ``./plots`` directory as ``.eps`` files. 
+___
+## Reproduce our Replication Study
+
+You can also reproduce the results of our replication study for the original Graph Matching Attack
+by [Vidanage et al.](https://doi.org/10.1145/3340531.3411931). These results have been reported in
+Chapter 3.2 of our paper.
+
+You can run our re-implementation of the original through the following command:
+
+`python3 reimplementation_vidanage.py`
+
+You may want to alter the *Disable*, *AliceRandomSeed* and *EveRandomSeed* in the
+`BLOCKING_CONFIG` dictionary to re-create the influence blocking and the choice
+of random seeds has on the attack performance.
