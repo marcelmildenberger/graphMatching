@@ -7,9 +7,21 @@ perfectly reproduce our results. However, the overall difference in results shou
 negligible.
 
 **Another Note:** Re-Running all experiments will take a considerable amount of time. Depending on your
-system specification you might face runtimes in excess of several weeks.
+system specification you might face runtimes in excess of a week.
 This is due to the large number of parameter combinations for the *BFD* encodings.
 To skip this step, edit line 102 of `benchmark.py` and set it to `diffuse = [False]`.
+This should limit the runtime to 5 - 7 days.
+___
+### System Details
+
+The experiments were run on a virtual machine with the following specification:
+
+- Ubuntu 22.04 LTS
+- 22 cores of an AMD EPYC 9254 24-Core Processor
+- NVIDIA GeForce RTX 3090 Ti, 24 GB VRAM
+- 425 GB of RAM
+- 3 TB HDD space
+
 ___
 ### Obtain Datasets
 Make sure that you have all required datasets in the  `./data` directory.
@@ -58,6 +70,8 @@ Chapter 3.2 of our paper.
 You can run our re-implementation of the original through the following command:
 
 `python3 reimplementation_vidanage.py`
+
+The attack's success rate will be printed on the terminal.
 
 You may want to alter the *Disable*, *AliceRandomSeed* and *EveRandomSeed* in the
 `BLOCKING_CONFIG` dictionary to re-create the influence blocking and the choice
