@@ -4,6 +4,7 @@ import numpy as np
 import os
 import gc
 from joblib import Parallel, delayed
+from .encoder import Encoder
 
 def make_inds(i_vals, numex):
     tmp1 = []
@@ -79,7 +80,7 @@ def calc_ngram(string, n):
     return set([[b[i:i + n] for i in range(len(b) - n + 1)] for b in string][0])
 
 
-class NonEncoder():
+class NonEncoder(Encoder):
 
     def __init__(self, ngram_size: int, verbose: bool = False, workers=-1):
         """

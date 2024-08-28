@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
+from .encoder import Encoder
 
 
 def est_1bit_jacc(arr_a, arr_b):
@@ -69,7 +70,7 @@ def compute_metrics(inds, cache, uids, metric, sim, onebit):
     return tmp
 
 
-class TMHEncoder():
+class TMHEncoder(Encoder):
 
     def __init__(self, num_hash_func, num_hash_bits, num_sub_keys,
                  ngram_size, one_bit_hash=True, random_seed=42, verbose=False, workers=-1):
