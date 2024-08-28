@@ -11,6 +11,8 @@ from datetime import datetime
 
 from gensim.models.callbacks import CallbackAny2Vec
 
+from .embedder import Embedder
+
 
 class LossLogger(CallbackAny2Vec):
     '''Output loss at each epoch'''
@@ -27,7 +29,8 @@ class LossLogger(CallbackAny2Vec):
         print(f'  Loss: {loss-self.losses[self.epoch-1]}')
         self.epoch += 1
 
-class N2VEmbedder():
+
+class N2VEmbedder(Embedder):
 
     def __init__(self, walk_length: int, n_walks: int, p: int, q: int, dim_embeddings: int, context_size: int, epochs,
                  seed: int = 1337, workers: int = -1, verbose=False):

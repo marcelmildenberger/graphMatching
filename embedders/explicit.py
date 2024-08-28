@@ -6,20 +6,20 @@ import networkx as nx
 import numpy as np
 from tqdm import tqdm
 from sklearn.preprocessing import normalize
-
+from .embedder import Embedder
 
 # Return Method for the defaultdict
 def ret_zero():
     return 0
 
 
-class ExplicitEmbedder():
+class ExplicitEmbedder(Embedder):
     """
     This is a re-implementation of the algorithm Vidanage et al. (https://doi.org/10.1145/3340531.3411931)
     used to create node embeddings.
     """
 
-    def __init__(self, graph, encodings, uids, min_component_size=None, verbose=False):
+    def __init__(self, encodings, uids, min_component_size=None, verbose=False):
         self.encodings = encodings
         self.uids = uids
         self.min_component_size = min_component_size
@@ -29,19 +29,10 @@ class ExplicitEmbedder():
         self.max_degree = None
         self.degree_centr = None
         self.betweenness_centr = None
+        self.hist_features = None
         self.length_dict = {}
         self.node_frequencies = {}
         self.verbose = verbose
-
-        if type(graph) == str:
-            self.__load(graph)
-        else:
-            self.G = graph
-
-        if min_component_size is not None:
-            self.__enforce_component_size()
-
-        self.__init_dicts()
 
     def __load(self, edgelist_dir):
         """
@@ -127,16 +118,27 @@ class ExplicitEmbedder():
 
         self.degree_centr = nx.degree_centrality(self.G)
 
-    def get_vectors(self, ordering=None, hist_features=None):
+    def train(self, data):
+        if type(data) == str:
+            self.__load(data)
+        else:
+            self.G = data
 
-        if hist_features is None:
-            hist_features = self.max_log_degree
+        if self.min_component_size is not None:
+            self.__enforce_component_size()
+
+        self.__init_dicts()
+
+    def get_vectors(self, ordering=None):
+
+        if self.hist_features is None:
+            self.hist_features = self.max_log_degree
 
         if ordering is None:
             ordering = list(self.G.nodes())
 
         # Initialize the feature array
-        num_feat = 11 + (2 * (hist_features + 1))
+        num_feat = 11 + (2 * (self.hist_features + 1))
         feat_array = np.zeros((len(ordering), num_feat), dtype=np.float32)
 
         if self.verbose:
@@ -205,7 +207,7 @@ class ExplicitEmbedder():
                     neighbor_one_neighborhood.intersection(neighbor_set))
             for two_neighbor in two_neighborhood:
                 two_neighbor_log_degree = math.floor(math.log(self.G.degree(two_neighbor), 2))
-                feat_array[i, 11 + hist_features + 1 + two_neighbor_log_degree] += 1
+                feat_array[i, 11 + self.hist_features + 1 + two_neighbor_log_degree] += 1
             feat_array[i, j] = egonet_degree
             j += 1
             feat_array[i, j] = self.betweenness_centr[node]
@@ -216,3 +218,6 @@ class ExplicitEmbedder():
         # Note: Column-Wise normalization
         feat_array = normalize(feat_array, axis=0, norm='max')
         return feat_array, ordering
+
+    def set_hist_features(self, hist_features):
+        self.hist_features = hist_features

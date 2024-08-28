@@ -100,18 +100,23 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, BLOCKING_CONFIG):
     np.savetxt("./data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
     np.savetxt("./data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
-    alice_embedder = ExplicitEmbedder("./data/edgelists/alice.edg", alice_enc, alice_uids,
+    alice_embedder = ExplicitEmbedder(alice_enc, alice_uids,
                                       min_component_size=EMB_CONFIG["MinComponentSize"],
                                       verbose=GLOBAL_CONFIG["Verbose"])
 
-    eve_embedder = ExplicitEmbedder("./data/edgelists/eve.edg", eve_enc, eve_uids,
+    eve_embedder = ExplicitEmbedder(eve_enc, eve_uids,
                                     min_component_size=EMB_CONFIG["MinComponentSize"], verbose=GLOBAL_CONFIG["Verbose"])
+
+    alice_embedder.train("./data/edgelists/alice.edg")
+    eve_embedder.train("./data/edgelists/eve.edg")
 
     hist_features = max(alice_embedder.max_log_degree, eve_embedder.max_log_degree)
 
-    alice_emb, alice_uids = alice_embedder.get_vectors(hist_features=hist_features)
+    alice_embedder.set_hist_features(hist_features)
+    eve_embedder.set_hist_features(hist_features)
 
-    eve_emb, eve_uids = eve_embedder.get_vectors(hist_features=hist_features)
+    alice_emb, alice_uids = alice_embedder.get_vectors()
+    eve_emb, eve_uids = eve_embedder.get_vectors()
 
     if GLOBAL_CONFIG["Matching"] == "MinWeight":
         matcher = MinWeightMatcher(GLOBAL_CONFIG["MatchingMetric"])
