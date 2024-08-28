@@ -50,9 +50,8 @@ class N2VEmbedder():
 
     def train(self, data_dir: str):
         """
-        Computes the NetMF Embeddings for the graph specified in data.
-        :param data: The graph to encode. Either a string containing the path to an edgelist file, or an edgelist of the
-        form [(source, target, weight), (source, target, weight), ...]
+        Computes the Node2Vec Embeddings for the graph specified in data.
+        :param data_dir: The graph to encode. A string containing the path to an edgelist file.
         :return: Nothing
         """
         graph = pecanpy.pecanpy.SparseOTF(p=self.p, q=self.q, workers=self.workers, verbose=self.verbose, random_state=self.seed,
@@ -104,7 +103,7 @@ class N2VEmbedder():
 
         self.model.save(os.path.join(path, filename))
 
-    def get_vectors(self, ordering: List[str] = None) -> np.ndarray:
+    def get_vectors(self, ordering: List[str] = None) -> Tuple[np.ndarray, List[Union[int,str]]]:
         """
         Given an ordering (a list of node IDs), returns a numpy array storing their respective embeddings, as well as
         the ordering itself. The ordering of the array (row indices) is equivalent to the odering of the supplied list.
