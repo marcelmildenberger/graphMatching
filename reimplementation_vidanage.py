@@ -136,21 +136,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, BLOCKING_CONFIG):
             correct += 1
 
     print("Correct: " + str(correct) + " of " + str(len(alice_uids)))
-
+    print("Success Rate: " + str(correct/len(alice_uids)))
 
 if __name__ == "__main__":
     GLOBAL_CONFIG = {
         "Data": "./data/titanic_full.tsv",
-        "Overlap": 1,
-        "DropFrom": "Alice",
-        "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
-        "BenchMode": False,  # Benchmark Mode
         "Verbose": True,  # Print Status Messages?
         "MatchingMetric": "cosine",
-        "Matching": "MinWeight",
-        "Workers": -1,
-        "SaveAliceEncs": False,
-        "SaveEveEncs": False
+        "Matching": "MinWeight"
     }
 
     ENC_CONFIG = {
