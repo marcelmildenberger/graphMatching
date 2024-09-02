@@ -503,8 +503,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     # None/Else:    Use entire datasets for alignment
 
     if ALIGN_CONFIG["Selection"] == "GroundTruth":
-        alice_sub = alice_embeddings[[alice_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
-        eve_sub = eve_embeddings[[eve_indexdict[k[0]] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
+        alice_sub = alice_embeddings[[alice_indexdict[k] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
+        eve_sub = eve_embeddings[[eve_indexdict[k] for k in alice_uids[:ALIGN_CONFIG["MaxLoad"]]], :]
 
     elif ALIGN_CONFIG["Selection"] == "Random":
         eve_sub = eve_embeddings[
