@@ -283,7 +283,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         elif ENC_CONFIG["EveAlgo"] == "TwoStepHash":
             eve_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
                                     ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
-                                    verbose=GLOBAL_CONFIG["Verbose"])
+                                    verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
