@@ -529,7 +529,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         bs = int(ALIGN_CONFIG["Batchsize"]*min(len(alice_sub), len(eve_sub)))
         ALIGN_CONFIG["Batchsize"] = bs
 
-    ALIGN_CONFIG["Batchsize"] = min(ALIGN_CONFIG["Batchsize"], 20000)
+    ALIGN_CONFIG["Batchsize"] = min(ALIGN_CONFIG["Batchsize"], 35000)
 
     del alice_enc, eve_enc
 

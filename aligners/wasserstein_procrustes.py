@@ -153,11 +153,11 @@ class WassersteinAligner(Aligner):
             X_c = self.X
             Y_c = self.Y
 
-        if X_c.shape[0] > 10000:
-            X_c = X_c[torch.randperm(len(X_c))[:10000]]
+        if X_c.shape[0] > 23000:
+            X_c = X_c[torch.randperm(len(X_c))[:23000]]
 
-        if Y_c.shape[0] > 10000:
-            Y_c = Y_c[torch.randperm(len(Y_c))[:10000]]
+        if Y_c.shape[0] > 23000:
+            Y_c = Y_c[torch.randperm(len(Y_c))[:23000]]
 
         n, d = X_c.shape
 
