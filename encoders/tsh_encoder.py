@@ -73,10 +73,10 @@ def make_inds(i_vals, numex):
     for i in i_vals:
         tmp2 = []
         for j in range(i + 1, numex):
-            tmp2.append(np.array([i, j], dtype=np.uint32))
+            tmp2.append(np.array([i, j], dtype=int))
         if len(tmp2) > 0:
             tmp1.append(np.vstack(tmp2))
-    return np.vstack(tmp1, dtype=np.uint32)
+    return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0, 2), dtype=int)
 
 
 class TSHEncoder(Encoder):
@@ -198,7 +198,7 @@ class TSHEncoder(Encoder):
             del tmpdict
 
         output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex),
-                                                                                         self.workers))
+                                                                                         self.workers*4))
         inds = np.vstack(output_generator)
         numinds = len(inds)
         inds = np.array_split(inds, self.workers)
