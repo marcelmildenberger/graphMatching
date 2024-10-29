@@ -1,4 +1,6 @@
 import os
+import string
+
 import hickle as hkl
 import pickle
 import random
@@ -16,6 +18,7 @@ from encoders.bf_encoder import BFEncoder
 from encoders.tmh_encoder import TMHEncoder
 from encoders.tsh_encoder import TSHEncoder
 from encoders.non_encoder import NonEncoder
+from encoders.pst_encoder import PSTEncoder
 from matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
 
 from matchers.spatial import NNMatcher
@@ -40,7 +43,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                "DropFrom"] in supported_drops, "Error: Data must be dropped from one of %s" % (
         (supported_drops))
 
-    supported_encs = ["BloomFilter", "TabMinHash", "TwoStepHash", "None", None]
+    supported_encs = ["BloomFilter", "TabMinHash", "TwoStepHash", "PST", "Heng", "None", None]
     assert (ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs), "Error: Encoding " \
                                     "method must be one of %s" % ((supported_encs))
 
@@ -95,6 +98,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     ##############################################
 
     # Check if Alice's data has been encoded before. If yes, load stored data.
+    alice_skip_thresholding = False
+
     if os.path.isfile("./data/encoded/alice-%s.h5" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's encoded records")
@@ -178,6 +183,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_encoder = TSHEncoder(ENC_CONFIG["AliceNHashFunc"], ENC_CONFIG["AliceNHashCol"], ENC_CONFIG["AliceN"],
                                     ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
                                     verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
+        elif ENC_CONFIG["AliceAlgo"] in ["PST", "Heng"]:
+            alice_encoder = PSTEncoder(ENC_CONFIG["AlicePSTK"], ENC_CONFIG["AlicePSTL"], ENC_CONFIG["AlicePSTP"],
+                                       charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
+                                       workers=GLOBAL_CONFIG["Workers"])
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
@@ -188,6 +197,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
         alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True,
                                                         store_encs=GLOBAL_CONFIG["SaveAliceEncs"])
+
+        # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
+        # (Probability of visiting a node would always be zero.)
+        if sum(alice_enc[:, 2]) == 0:
+            alice_enc[:, 2] = 0.5
+            alice_skip_thresholding = True
 
         del alice_data
 
@@ -211,9 +226,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
     # Compute the threshold value for subsetting: Only keep the X% highest similarities.
-    tres = np.quantile(alice_enc[:,2], EMB_CONFIG["AliceQuantile"])
-    # Only keep edges if their similarity is above the threshold
-    alice_enc = alice_enc[(alice_enc[:, 2] > tres), :]
+    if not alice_skip_thresholding:
+        tres = np.quantile(alice_enc[:,2], EMB_CONFIG["AliceQuantile"])
+        # Only keep edges if their similarity is above the threshold
+        alice_enc = alice_enc[(alice_enc[:, 2] > tres), :]
 
     # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
     if EMB_CONFIG["AliceDiscretize"]:
@@ -223,6 +239,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         print("Done processing Alice's data.")
 
     # Check if Eve's data has been encoded before. If yes, load stored data.
+    eve_skip_thresholding = False
+
     if os.path.isfile("./data/encoded/eve-%s.h5" % eve_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's encoded records")
@@ -284,6 +302,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
                                     ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
                                     verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
+        elif ENC_CONFIG["AliceAlgo"] in ["PST", "Heng"]:
+            eve_encoder = PSTEncoder(ENC_CONFIG["EvePSTK"], ENC_CONFIG["EvePSTL"], ENC_CONFIG["EvePSTP"],
+                                       charset=ENC_CONFIG["EveCharset"], verbose=GLOBAL_CONFIG["Verbose"],
+                                       workers=GLOBAL_CONFIG["Workers"])
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
@@ -295,6 +317,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
+
+        # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
+        # (Probability of visiting a node would always be zero.)
+        if sum(eve_enc[:, 2]) == 0:
+            eve_enc[:, 2] = 0.5
+            eve_skip_thresholding = True
+
         del eve_data
 
         # Compute duration of Alice's encoding
@@ -318,8 +347,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         print("Computing Thresholds and subsetting data for Eve")
 
     # Compute the threshold value for subsetting: Only keep the X% highest similarities.
-    tres = np.quantile(eve_enc[:, 2], EMB_CONFIG["EveQuantile"])
-    eve_enc = eve_enc[(eve_enc[:, 2] > tres), :]
+    if not eve_skip_thresholding:
+        tres = np.quantile(eve_enc[:, 2], EMB_CONFIG["EveQuantile"])
+        eve_enc = eve_enc[(eve_enc[:, 2] > tres), :]
 
     # Optionally sets all remaining similarities to 1, essentially creating an unweighted graph.
     if EMB_CONFIG["EveDiscretize"]:
@@ -716,7 +746,17 @@ if __name__ == "__main__":
         "AliceRandMode": "PNG",
         "EveNHashFunc": 10,
         "EveNHashCol": 1000,
-        "EveRandMode": "PNG"
+        "EveRandMode": "PNG",
+        # For PST Encoding
+        "AlicePSTK": 20,
+        "AlicePSTL": 8,
+        "AlicePSTP": None,
+        "AliceCharset": string.printable,
+        "EvePSTK": 20,
+        "EvePSTL": 8,
+        "EvePSTP": None,
+        "EveCharset": string.printable
+
     }
 
     EMB_CONFIG = {
