@@ -3,6 +3,7 @@ import os
 import scipy
 import numpy as np
 import galois
+import pickle
 import string
 from tqdm import tqdm
 from .encoder import Encoder
@@ -103,17 +104,18 @@ class PSTEncoder(Encoder):
         self.ngram_ind = dict(zip(ngram_universe, range(len(ngram_universe))))
 
         if p is None:
-            if verbose:
-                print("Choosing prime p")
             self.p = sympy.randprime(37 * 10 ** 7, 37 * 10 ** 8)
             if verbose:
-                print(p)
+                print("Chose prime p: %i" % self.p)
         else:
             self.p = p
 
         # Generate a random prime q for coefficient mapping
         q_lower = ((2 * (l ** 2)) + l) * (self.p - 1) * 2 ** (k + 1)
-        self.q = get_rand_safeprime(q_lower + 1, q_lower * 10)
+        assert q_lower < (2**63)-1, "Lower bound of prime q is out of range for 64 bit integers!"
+        self.q = get_rand_safeprime(q_lower + 1, (2**63)-1)
+        if verbose:
+            print("Chose prime q: %i" % self.q)
 
         # Set up the Finite Field
         self.GF_q = galois.GF(self.q)
@@ -121,6 +123,8 @@ class PSTEncoder(Encoder):
         # Create two mappings mapping each possible ngram to a coefficient and an exponent.
         # Note that the m_exp has to be injective, which is ensured by checking for duplicates
         rng = Generator(PCG64())
+        if verbose:
+            print("Generate mappings")
 
         m_exp = rng.integers(1, p, len(ngram_universe))
         unique_exp_inds = np.unique(m_exp, return_index=True)[1]
@@ -131,12 +135,22 @@ class PSTEncoder(Encoder):
 
         self.m_coeff = self.GF_q(rng.integers(1, self.q, len(ngram_universe)))
 
-        self.u = 5
+        if verbose:
+            print("Searching for primitive element of finite field.")
+
+        self.u = rng.integers(1, self.q, 1)
         while not safe_is_primitive_element(self.u, self.q, self.GF_q):
             self.u = rng.integers(1, self.q, 1)
 
+        if verbose:
+            print("Chose primitive element: %i" % self.u)
+            print("Pre-computing inputs and exponents for polynomials")
+
         self.poly_inputs = np.power(self.GF_q(self.u), np.arange(4 * l + 1))
         self.expos = np.power(self.poly_inputs.reshape(-1, 1), np.tile(m_exp, (self.poly_inputs.shape[0], 1)))
+
+        if verbose:
+            print("Done.")
 
     def _to_onehot(self, data):
         data = ngramize(data, 2)
@@ -171,6 +185,8 @@ class PSTEncoder(Encoder):
         uids = [float(u) for u in uids]
         data_chunks = np.array_split(np.arange(data.shape[0]), self.workers)
         parallel = Parallel(n_jobs=self.workers)
+        if self.verbose:
+            print("Encoding data into Hankel matrices")
         output_generator = parallel(
             delayed(to_hankel)(np.array(data[c]), np.array(self.m_coeff), self.l, np.array(self.expos), self.q) for c in
             data_chunks)
@@ -197,4 +213,6 @@ class PSTEncoder(Encoder):
         inds = np.array_split(inds, self.workers)
         pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, sim) for i in inds)
         del cache
+        if self.verbose:
+            print("Computing similarities")
         return np.vstack(pw_metrics)
