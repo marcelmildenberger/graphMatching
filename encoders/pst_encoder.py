@@ -65,8 +65,31 @@ def make_inds(i_vals, numex):
             tmp1.append(np.vstack(tmp2))
     return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0, 2), dtype=int)
 
+def get_multiplicative_inverse(a, fieldsize):
+    d, s, t = galois.egcd(a, fieldsize)
+    return s % fieldsize
 
-def compute_metrics(inds, cache, uids, sim):
+def det_is_zero(A, q):
+    m = A.shape[0]
+    Ai = np.array(A.copy(), dtype='object')
+    L = np.identity(m)
+    for i in range(0, m - 1):
+        if Ai[i, i] == 0:
+            idxs = np.nonzero(Ai[i:, i])[0]  # The first non-zero entry in column `i` below row `i`
+            if idxs.size == 0:
+                return 1
+                L[i, i] = 1
+                continue
+            else:
+                raise ValueError("The LU decomposition of 'A' does not exist. Use the PLU decomposition instead.")
+        inv = get_multiplicative_inverse(Ai[i, i], q)
+        l = np.mod(Ai[i + 1 :, i] * inv, q, dtype='object')
+        Ai[i + 1 :, :] = np.mod(Ai[i + 1 :, :] - np.mod(np.multiply.outer(l, Ai[i, :]),q), q)
+        L[i + 1 :, i] = l
+    #U = Ai
+    return int(np.mod(np.mod(np.product(np.diag(Ai)),q) * np.mod(np.product(np.diag(L)), q),q)==0)
+
+def compute_metrics(inds, cache, uids, sim, q):
     tmp = np.zeros((len(inds), 3), dtype=np.float32)
     pos = 0
     prev_i = prev_j = None
@@ -78,13 +101,12 @@ def compute_metrics(inds, cache, uids, sim):
             j_enc = cache[uids[j]]
             prev_j = j
 
-        val = int(np.linalg.det(i_enc - j_enc)) == 0
+        val = det_is_zero(i_enc - j_enc, q)
         if not sim:
             val = 1 - val
         tmp[pos] = np.array([uids[i], uids[j], val])
         pos += 1
     return tmp
-
 
 class PSTEncoder(Encoder):
 
@@ -194,7 +216,7 @@ class PSTEncoder(Encoder):
         i = 0
         for enc_chunks in tqdm(output_generator, desc="Encoding", disable=not self.verbose, total=len(data_chunks)):
             for enc in enc_chunks:
-                cache[uids[i]] = enc
+                cache[uids[i]] = np.array(enc)
                 i += 1
         del output_generator
         if store_encs:
@@ -211,7 +233,7 @@ class PSTEncoder(Encoder):
             delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers))
         inds = np.vstack(output_generator)
         inds = np.array_split(inds, self.workers)
-        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, sim) for i in inds)
+        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, sim, self.q) for i in inds)
         del cache
         if self.verbose:
             print("Computing similarities")
