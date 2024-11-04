@@ -201,6 +201,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
         if sum(alice_enc[:, 2]) == 0:
+            if GLOBAL_CONFIG["Verbose"]:
+                print("Warning: All edges in Alice's similarity graph are Zero.")
             alice_enc[:, 2] = 0.5
             alice_skip_thresholding = True
 
@@ -225,11 +227,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
+
     # Compute the threshold value for subsetting: Only keep the X% highest similarities.
     if not alice_skip_thresholding:
-        tres = np.quantile(alice_enc[:,2], EMB_CONFIG["AliceQuantile"])
+        tres = np.quantile(alice_enc[:, 2], EMB_CONFIG["AliceQuantile"])
+        # Drop zero-edges
+        alice_enc = alice_enc[(alice_enc[:, 2] > 0), :]
         # Only keep edges if their similarity is above the threshold
-        alice_enc = alice_enc[(alice_enc[:, 2] > tres), :]
+        alice_enc = alice_enc[(alice_enc[:, 2] >= tres), :]
 
     # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
     if EMB_CONFIG["AliceDiscretize"]:
@@ -321,6 +326,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
         if sum(eve_enc[:, 2]) == 0:
+            if GLOBAL_CONFIG["Verbose"]:
+                print("Warning: All edges in Eve's similarity graph are Zero.")
             eve_enc[:, 2] = 0.5
             eve_skip_thresholding = True
 
@@ -346,10 +353,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
 
+
+
     # Compute the threshold value for subsetting: Only keep the X% highest similarities.
     if not eve_skip_thresholding:
         tres = np.quantile(eve_enc[:, 2], EMB_CONFIG["EveQuantile"])
-        eve_enc = eve_enc[(eve_enc[:, 2] > tres), :]
+        # Drop zero-edges
+        eve_enc = eve_enc[(eve_enc[:, 2] > 0), :]
+
+        eve_enc = eve_enc[(eve_enc[:, 2] >= tres), :]
 
     # Optionally sets all remaining similarities to 1, essentially creating an unweighted graph.
     if EMB_CONFIG["EveDiscretize"]:
