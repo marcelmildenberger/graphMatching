@@ -69,29 +69,38 @@ def get_multiplicative_inverse(a, fieldsize):
     d, s, t = galois.egcd(a, fieldsize)
     return s % fieldsize
 
-def det_is_zero(A, q):
+
+def compute_rank(A, q, normalize=True):
     m = A.shape[0]
     Ai = np.array(A.copy(), dtype='object')
     L = np.identity(m)
+    # global inv_lookup
     for i in range(0, m - 1):
         if Ai[i, i] == 0:
             idxs = np.nonzero(Ai[i:, i])[0]  # The first non-zero entry in column `i` below row `i`
             if idxs.size == 0:
-                return 1
                 L[i, i] = 1
                 continue
             else:
                 raise ValueError("The LU decomposition of 'A' does not exist. Use the PLU decomposition instead.")
+        # if int(Ai[i, i]) not in inv_lookup:
+        #    inv_lookup[int(int(Ai[i, i]))] = int(np.reciprocal(GF(Ai[i, i])))
         inv = get_multiplicative_inverse(Ai[i, i], q)
-        l = np.mod(Ai[i + 1 :, i] * inv, q, dtype='object')
-        Ai[i + 1 :, :] = np.mod(Ai[i + 1 :, :] - np.mod(np.multiply.outer(l, Ai[i, :]),q), q)
-        L[i + 1 :, i] = l
-    #U = Ai
-    return int(np.mod(np.mod(np.product(np.diag(Ai)),q) * np.mod(np.product(np.diag(L)), q),q)==0)
+        l = np.mod(Ai[i + 1:, i] * inv, q, dtype='object')
+        Ai[i + 1:, :] = np.mod(Ai[i + 1:, :] - np.mod(np.multiply.outer(l, Ai[i, :]), q), q)
+        L[i + 1:, i] = l
+    # U = Ai
+
+    if normalize:
+        return 1 - (np.sum(np.sum(Ai, axis=1) != 0) / m)
+    else:
+        return np.sum(np.sum(Ai, axis=1) != 0)
+
 
 def compute_metrics(inds, cache, uids, sim, q):
     tmp = np.zeros((len(inds), 3), dtype=np.float32)
     pos = 0
+    # GF = galois.GF(q)
     prev_i = prev_j = None
     for i, j in inds:
         if i != prev_i:
@@ -101,7 +110,8 @@ def compute_metrics(inds, cache, uids, sim, q):
             j_enc = cache[uids[j]]
             prev_j = j
 
-        val = det_is_zero(i_enc - j_enc, q)
+        val = compute_rank(i_enc - j_enc, q, normalize=True)
+        # val = int(np.linalg.det(i_enc - j_enc)==0)
         if not sim:
             val = 1 - val
         tmp[pos] = np.array([uids[i], uids[j], val])
