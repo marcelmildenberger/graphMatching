@@ -6,7 +6,7 @@ to the paper artifacts due to page limitations.
 **Index**
 * [Node Representations](#node-representations)
 * [Result Files](#result-files)
-
+* [Runtimes](#runtimes)
 ---
 ## Node Representations
 As mentioned in Section 3.3, the representations of similarity graph nodes as proposed by 
