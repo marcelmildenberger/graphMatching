@@ -103,6 +103,8 @@ ___
 
 ## Result Files
 
+* [Detailed results for GMAs on BF, TSH and TMH](./results/gma_benchmark.tsv)
+* [Detailed results for GMAs on BFDs](./results/bf_diff_benchmark.tsv)
 ___
 ## Runtimes
 [Table 4](#table-4) compares the runtimes of the attack as reported by Vidanage et al. and measured in our experiments.
