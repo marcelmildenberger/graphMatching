@@ -2,11 +2,12 @@
 ___
 This repository contains the accompanying code for the paper
 
-*Revisiting Graph Matching Attacks on Privacy-Preserving Record Linkage*
+[*Revisiting Graph Matching Attacks on Privacy-Preserving Record Linkage*](https://www.openconf.org/acsac2024/modules/request.php?module=oc_program&action=summary.php&id=17)
 
-that is currently under peer review. 
+as presented at ACSAC 2024, Honolulu, Hawaii.
 Please follow the instructions below to set up your system.
-There are dedicated guides to [reproduce](./docs/reproduction.md) or [extend](./docs/extension.md) our work.
+There are dedicated guides to [reproduce](./docs/reproduction.md) or [extend](./docs/extension.md) our work. Additional information
+referenced in the paper can be found [here](./additional_infotmation.md).
 ___
 ## System Requirements
 Due to substantially improved performance, we strongly recommend to run the experiments
