@@ -7,6 +7,7 @@ to the paper artifacts due to page limitations.
 * [Node Representations](#node-representations)
 * [Result Files](#result-files)
 * [Runtimes](#runtimes)
+* [Parameters](#parameters)
 ---
 ## Node Representations
 As mentioned in Section 3.3, the representations of similarity graph nodes as proposed by 
@@ -124,3 +125,6 @@ Note that the value for step $1$ reported for our experiments also includes the 
 |                       | **BF**         | 0.50         | 26.65        | 0.07         | 26.22       |
 | **Ours**              | **TSH**        | 4.08         | 27.47        | 0.07         | 31.62       |
 |                       | **TMH**        | 46.85        | 23.27        | 0.13         | 70.25       |
+___
+## Parameters
+A description of the attack parameters can be found [here](./docs/parameters.md).
