@@ -20,9 +20,11 @@ def read_tsv(path: str, header: bool = True, as_dict: bool = False, delim: str =
     return data, uid
 
 
-def save_tsv(data, path: str, delim: str = "\t", mode="w"):
+def save_tsv(data, path: str, delim: str = "\t", mode="w", write_header: bool = False, header: list[str]= None):
     with open(path, mode, newline="") as f:
         csvwriter = csv.writer(f, delimiter=delim)
+        if(write_header):
+            csvwriter.writerow(header)
         csvwriter.writerows(data)
 
 
