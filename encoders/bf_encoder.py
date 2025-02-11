@@ -184,8 +184,8 @@ class BFEncoder(Encoder):
 
         return enc_data
 
-    def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
-                           metric: str, sim: bool = True, store_encs: bool = False) -> np.ndarray:
+    def encode_and_compare_and_append(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
+                           metric: str, sim: bool = True, store_encs: bool = False) -> Tuple[np.ndarray, Sequence[Sequence[str]]]:
         """
         Encodes the given data using bloom filter encoding (CLKHash), then computes and returns the pairwise
         similarities/distances of the bloom filters as a list of tuples.
@@ -200,8 +200,12 @@ class BFEncoder(Encoder):
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
         #print("DEB: Encoding")
-        data = [["".join(d).lower()] for d in data]
-        enc = self.encode(data)
+        data_joined = [["".join(d).lower()] for d in data]
+        enc = self.encode(data_joined)
+        enc_as_int = enc.astype(int)
+        enc_as_string = [''.join(map(str, bits)) for bits in enc_as_int]
+
+        combined_data = np.column_stack((data, enc_as_string, uids))
 
         if store_encs:
             cache = dict(zip(uids, enc))
@@ -216,7 +220,7 @@ class BFEncoder(Encoder):
         output_generator = parallel(
             delayed(calc_metrics)(uids, enc, metric, sim, inds) for inds in ind_combinations)
 
-        return np.vstack(output_generator)
+        return np.vstack(output_generator), combined_data
 
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 

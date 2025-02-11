@@ -106,12 +106,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
         # floats to save memory.
-        alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
+        alice_enc_sim = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
         # First row contains the number of records initially present in Alice's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
         # Extract the value and omit first row.
-        n_alice = int(alice_enc[0][2])
-        alice_enc = alice_enc[1:]
+        n_alice = int(alice_enc_sim[0][2])
+        alice_enc_sim = alice_enc_sim[1:]
         # If records were dropped from both datasets, we load the number of overlapping records. This is required
         # to correctly compute the success rate later on
         if GLOBAL_CONFIG["DropFrom"] == "Both":
@@ -132,8 +132,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["DropFrom"] == "Both":
             # Compute the maximum number of overlapping records possible for the given dataset size and overlap
             overlap_count = int(-(GLOBAL_CONFIG["Overlap"] * len(alice_data) / (GLOBAL_CONFIG["Overlap"] - 2)))
-            with open("./data/encoded/overlap-%s.pck" % alice_enc_hash, "wb") as f:
-                pickle.dump(overlap_count, f, protocol=5)
+            #with open("./data/encoded/overlap-%s.pck" % alice_enc_hash, "wb") as f:
+             #   pickle.dump(overlap_count, f, protocol=5)
             # Randomly select the overlapping records from the set of available records (all records in the data)
             available = list(range(len(alice_data)))
             selected_overlap = random.sample(available, overlap_count)
@@ -195,15 +195,18 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
-        alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True,
+        alice_enc_sim, alice_data_combined_with_encoding = alice_encoder.encode_and_compare_and_append(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True,
                                                         store_encs=GLOBAL_CONFIG["SaveAliceEncs"])
+        alice_data_encoded = [row[2:] for row in alice_data_combined_with_encoding]
+        save_tsv(alice_data_combined_with_encoding, "./data/gma_result/alice_data_combined_with_encoding.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
+        save_tsv(alice_data_encoded, "./data/eves_information/alice_data_encoded.tsv", header=["bloomfilter", "uid"], write_header=True)
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
-        if sum(alice_enc[:, 2]) == 0:
+        if sum(alice_enc_sim[:, 2]) == 0:
             if GLOBAL_CONFIG["Verbose"]:
                 print("Warning: All edges in Alice's similarity graph are Zero.")
-            alice_enc[:, 2] = 0.5
+            alice_enc_sim[:, 2] = 0.5
             alice_skip_thresholding = True
 
         del alice_data
@@ -214,7 +217,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
         if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("dev/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("dev/alice.edg", alice_enc_sim, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Alice's data")
@@ -222,23 +225,23 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Prepend the initial number of records in Alice's dataset to the similarities and save them to disk.
         # Uses HDF Format for increased performance.
         # TODO: np.vstack tends to be slow for large arrays. Maybe replace with something faster/save in own file
-        hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(np.float32), alice_enc]),
-                 "./data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
+        #hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(np.float32), alice_enc_sim]),
+         #        "./data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
 
     # Compute the threshold value for subsetting: Only keep the X% highest similarities.
     if not alice_skip_thresholding:
-        tres = np.quantile(alice_enc[:, 2], EMB_CONFIG["AliceQuantile"])
+        tres = np.quantile(alice_enc_sim[:, 2], EMB_CONFIG["AliceQuantile"])
         # Drop zero-edges
-        alice_enc = alice_enc[(alice_enc[:, 2] > 0), :]
+        alice_enc_sim = alice_enc_sim[(alice_enc_sim[:, 2] > 0), :]
         # Only keep edges if their similarity is above the threshold
-        alice_enc = alice_enc[(alice_enc[:, 2] >= tres), :]
+        alice_enc_sim = alice_enc_sim[(alice_enc_sim[:, 2] >= tres), :]
 
     # Discretize the data, i.e. replace all similarities with 1 (thus creating an unweighted graph)
     if EMB_CONFIG["AliceDiscretize"]:
-        alice_enc[:, 2] = 1.0
+        alice_enc_sim[:, 2] = 1.0
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Alice's data.")
@@ -252,12 +255,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
         # floats to save memory.
-        eve_enc = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
+        eve_enc_sim = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
         # First row contains the number of records initially present in Eve's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
         # Extract the value and omit first row.
-        n_eve = int(eve_enc[0][2])
-        eve_enc = eve_enc[1:]
+        n_eve = int(eve_enc_sim[0][2])
+        eve_enc_sim = eve_enc_sim[1:]
         # Set duration of encoding to -1 to indicate that stored records were used (Only relevant when benchmarking)
         if GLOBAL_CONFIG["BenchMode"]:
             elapsed_eve_enc = -1
@@ -320,15 +323,18 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
 
-        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
+        eve_enc_sim, eve_data_combined_with_encoding = eve_encoder.encode_and_compare_and_append(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
+        
+        save_tsv(eve_data_combined_with_encoding, "./data/gma_result/eve_data_combined_with_encoding.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
+        save_tsv(eve_data_combined_with_encoding, "./data/eves_information/eve_data_combined_with_encoding.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
-        if sum(eve_enc[:, 2]) == 0:
+        if sum(eve_enc_sim[:, 2]) == 0:
             if GLOBAL_CONFIG["Verbose"]:
                 print("Warning: All edges in Eve's similarity graph are Zero.")
-            eve_enc[:, 2] = 0.5
+            eve_enc_sim[:, 2] = 0.5
             eve_skip_thresholding = True
 
         del eve_data
@@ -339,7 +345,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
         if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("dev/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("dev/eve.edg", eve_enc_sim, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
@@ -347,8 +353,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Prepend the initial number of records in Eve's dataset to the similarities and save them to disk.
         # Uses HDF Format for increased performance.
         # TODO: np.vstack tends to be slow for large arrays. Maybe replace with something faster/save in own file
-        hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(np.float32), eve_enc]),
-                 "./data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
+        #hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(np.float32), eve_enc_sim]),
+         #        "./data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
@@ -357,15 +363,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     # Compute the threshold value for subsetting: Only keep the X% highest similarities.
     if not eve_skip_thresholding:
-        tres = np.quantile(eve_enc[:, 2], EMB_CONFIG["EveQuantile"])
+        tres = np.quantile(eve_enc_sim[:, 2], EMB_CONFIG["EveQuantile"])
         # Drop zero-edges
-        eve_enc = eve_enc[(eve_enc[:, 2] > 0), :]
+        eve_enc_sim = eve_enc_sim[(eve_enc_sim[:, 2] > 0), :]
 
-        eve_enc = eve_enc[(eve_enc[:, 2] >= tres), :]
+        eve_enc_sim = eve_enc_sim[(eve_enc_sim[:, 2] >= tres), :]
 
     # Optionally sets all remaining similarities to 1, essentially creating an unweighted graph.
     if EMB_CONFIG["EveDiscretize"]:
-        eve_enc[:, 2] = 1.0
+        eve_enc_sim[:, 2] = 1.0
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Done processing Eve's data.")
@@ -407,7 +413,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if EMB_CONFIG["Algo"] == "Node2Vec":
             # PecanPy expects an edgelist on disk: Save similarities to edgelist format
             # TODO: Check if we can somehow pass the data directly to PecanPy
-            np.savetxt("data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("data/edgelists/alice.edg", alice_enc_sim, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
                                          p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"],
@@ -422,7 +428,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                            EMB_CONFIG["AliceNegative"],
                                            EMB_CONFIG["AliceNormalize"])
 
-            alice_embedder.train(alice_enc)
+            alice_embedder.train(alice_enc_sim)
 
 
 
@@ -443,9 +449,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         del alice_embedder
 
         # Save Embeddings and UIDs to disk (rows in embedding matrix are ordered according to the uids)
-        hkl.dump(alice_embeddings, "./data/embeddings/alice-%s.h5" % alice_emb_hash, mode='w')
-        with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "wb") as f:
-            pickle.dump(alice_uids, f, protocol=5)
+        #hkl.dump(alice_embeddings, "./data/embeddings/alice-%s.h5" % alice_emb_hash, mode='w')
+        #with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "wb") as f:
+         #   pickle.dump(alice_uids, f, protocol=5)
 
     # Create a dictionary that maps UIDs to their respective row index (Only used if alignment using ground truth is
     # selected)
@@ -485,7 +491,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             # PecanPy expects an edgelist on disk: Save similarities to edgelist format
             # TODO: Check if we can somehow pass the data directly to PecanPy
 
-            np.savetxt("data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("data/edgelists/eve.edg", eve_enc_sim, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
                                        p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
@@ -497,7 +503,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_embedder = NetMFEmbedder(EMB_CONFIG["EveDim"], EMB_CONFIG["EveContext"],
                                          EMB_CONFIG["EveNegative"],
                                          EMB_CONFIG["EveNormalize"])
-            eve_embedder.train(eve_enc)
+            eve_embedder.train(eve_enc_sim)
 
         # Compute the duration of the embedding
         if GLOBAL_CONFIG["BenchMode"]:
@@ -517,9 +523,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         del eve_embedder
 
         # Save Embeddings and UIDs to disk (rows in embedding matrix are ordered according to the uids)
-        hkl.dump(eve_embeddings, "./data/embeddings/eve-%s.h5" % eve_emb_hash, mode='w')
-        with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "wb") as f:
-            pickle.dump(eve_uids, f, protocol=5)
+       #hkl.dump(eve_embeddings, "./data/embeddings/eve-%s.h5" % eve_emb_hash, mode='w')
+        #with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "wb") as f:
+         #   pickle.dump(eve_uids, f, protocol=5)
 
     # Create a dictionary that maps UIDs to their respective row index (Only used if alignment using ground truth is
     # selected)
@@ -573,7 +579,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     ALIGN_CONFIG["Batchsize"] = min(ALIGN_CONFIG["Batchsize"], 35000)
 
-    del alice_enc, eve_enc
+    del alice_enc_sim, eve_enc_sim
 
     # Adjust data format (Turn list of 1D-Arrays into 2D-Array).
 
@@ -656,6 +662,11 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         elapsed_mapping = time.time() - start_mapping
         elapsed_relevant = time.time() - start_alice_emb
 
+    #Results for eve of the GMA
+    reidentified_individuals = []
+    reidentified_ids = []
+    not_reidentified_individuals = []
+
     # Evaluation
     correct = 0
     for smaller, larger in mapping.items():
@@ -663,6 +674,18 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             continue
         if smaller[1:] == larger[1:]:
             correct += 1
+            reidentified_ids.append(int(smaller[2:]))
+
+    for alice_entry in alice_data_encoded:
+        if int(alice_entry[-1]) in reidentified_ids:
+            for eve_entry in eve_data_combined_with_encoding:
+                if(int(eve_entry[-1]) == int(alice_entry[-1])):
+                    reidentified_individuals.append([eve_entry[0], eve_entry[1], alice_entry[0], eve_entry[-1]])
+        else:
+            not_reidentified_individuals.append(alice_entry)
+
+    save_tsv(reidentified_individuals, "./data/eves_information/reidentified_individuals.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
+    save_tsv(not_reidentified_individuals, "./data/eves_information/not_reidentified_individuals.tsv", header=["bloomfilter", "uid"], write_header=True)
 
     if GLOBAL_CONFIG["DropFrom"] == "Both":
         success_rate = correct / overlap_count
@@ -711,7 +734,7 @@ if __name__ == "__main__":
 
     GLOBAL_CONFIG = {
         "Data": "./data/titanic_full.tsv",
-        "Overlap": 1,
+        "Overlap": 0.5,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode
@@ -724,11 +747,11 @@ if __name__ == "__main__":
     }
 
     ENC_CONFIG = {
-        "AliceAlgo": "TwoStepHash",
+        "AliceAlgo": "BloomFilter",
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
-        "EveAlgo": None,
+        "EveAlgo": "BloomFilter",
         "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,
         "EveMetric": "dice",
