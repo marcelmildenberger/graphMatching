@@ -651,7 +651,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     elif GLOBAL_CONFIG["Matching"] == "NearestNeighbor":
         matcher = NNMatcher(GLOBAL_CONFIG["MatchingMetric"])
 
-    # Compute the mapping. Results in a list of the form [("S_1","L_2"),...], where "L_XXX" represents the UIDs in the
+    # Compute the mapping. Results in a list of the form [("S_1","L_2"),....], where "L_XXX" represents the UIDs in the
     # larger dataset and "S_XXX" represents the UIDs in the smaller dataset.
     # Note that mappings are included twice: Once as a mapping from S to L and once fom L to S.
     # These redundant mappings must be ignored when computing the success rate.
