@@ -734,7 +734,7 @@ if __name__ == "__main__":
 
     GLOBAL_CONFIG = {
         "Data": "./data/titanic_full.tsv",
-        "Overlap": 0.5,
+        "Overlap": 0.7,
         "DropFrom": "Alice",
         "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
         "BenchMode": False,  # Benchmark Mode

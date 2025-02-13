@@ -5,3 +5,6 @@
 /simulators/
 /.ipynb_checkpoints/
 /.idea/
+*.pyc
+*.edg
+*.tsv

@@ -4,8 +4,8 @@ import random
 
 import numpy as np
 from scipy import sparse
-from sparse_dot_mkl import dot_product_mkl
 import aesara
+#Not working on mac: from sparse_dot_mkl import dot_product_mkl replace with numpy dot
 from aesara import tensor as T
 import networkx as nx
 from typing import List, Union, Tuple
@@ -38,7 +38,8 @@ class NetMFEmbedder(Embedder):
         X_power = sparse.identity(n, format="csr")
         for i in range(window):
             # print "Compute matrix %d-th power" % (i + 1)
-            X_power = dot_product_mkl(X_power, X)
+            #X_power = dot_product_mkl(X_power, X) not working on mac
+            X_power = np.dot(X_power, X)
             S += X_power
         S *= vol / window / b
         D_rt_inv = sparse.diags(d_rt ** -1)
