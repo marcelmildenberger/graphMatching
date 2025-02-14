@@ -1,7 +1,6 @@
-from main import run
-
+from main import run_gma
 GLOBAL_CONFIG = {
-    "Data": "./data/titanic_full.tsv",
+    "Data": "./graphMatching/data/titanic_full.tsv",
     "Overlap": 1,
     "DropFrom": "Alice",
     "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
@@ -137,7 +136,7 @@ for e in encs:
             ENC_CONFIG["EveT"] = t
 
             for d in datasets:
-                GLOBAL_CONFIG["Data"] = "./data/" + d
+                GLOBAL_CONFIG["Data"] = "./graphMatching/data/" + d
                 for dr in drop:
                     GLOBAL_CONFIG["DropFrom"] = dr
                     for o in overlap:
@@ -152,4 +151,4 @@ for e in encs:
                             ALIGN_CONFIG["RegWS"] = max(0.1, o/3)
                         # Important: Pass (deep) copies of the dictionaries to the functions, as contents would be
                         # changed otherwise!
-                        run(GLOBAL_CONFIG.copy(), ENC_CONFIG.copy(), EMB_CONFIG.copy(), ALIGN_CONFIG.copy())
+                        run_gma(GLOBAL_CONFIG.copy(), ENC_CONFIG.copy(), EMB_CONFIG.copy(), ALIGN_CONFIG.copy())

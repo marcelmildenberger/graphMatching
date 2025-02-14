@@ -65,13 +65,13 @@ class N2VEmbedder(Embedder):
         graph.read_edg(data_dir, weighted=True, directed=False)
         # Generate the random walks
         if self.load_stored:
-            with open("./dev/walks_"+datname+".pck", "rb") as f:
+            with open("./graphMatching/dev/walks_"+datname+".pck", "rb") as f:
                 walks = pickle.load(f)
         else:
             walks = graph.simulate_walks(num_walks=self.n_walks, walk_length=self.walk_length)
 
         if self.dev:
-            with open("./dev/walks_"+datname+".pck", "wb") as f:
+            with open("./graphMatching/dev/walks_"+datname+".pck", "wb") as f:
                 pickle.dump(walks, f, protocol=5)
 
 

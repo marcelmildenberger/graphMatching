@@ -22,7 +22,7 @@ class Encoder(ABC):
         """
 
         # When implementing the store_encs functionality, you should create a dictionary with UIDs as keys and
-        # encodings as values. Store it in ./data/encodings
+        # encodings as values. Store it in ./graphMatching/data/encodings
 
         # For full compatibility, your encoder should be able to handle Dice and Jaccard Similarities
         return np.zeros((5, 3), dtype=np.float32), [["Placeholder1", "Placeholder2"], ["Placeholder3", "Placeholder4"]]

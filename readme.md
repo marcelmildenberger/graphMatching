@@ -38,7 +38,7 @@ If everything worked, you should now see a shell connected to your docker contai
 
 Type ``ls`` to view the contents of the directory you're currently in. The output should look like this:
 ````
-'Benchmark Results'   aligners       docs        main.py    preprocessing.py   utils.py
+'Benchmark Results'   aligners       docs        gma.py    preprocessing.py   utils.py
  Dockerfile           benchmark.py   embedders   matchers   readme.md          __pycache__
  data                 encoders       requirements.txt
  ````
@@ -79,10 +79,10 @@ You can also move data, e.g. benchmark results, ***from*** the container:
 
 ___
 ## Run the Code
-You can run your own experiments by editing the ``main.py`` file. To do so, open the file in a text editor like [Nano](https://linuxize.com/post/how-to-use-nano-text-editor/#opening-and-creating-files): ``nano main.py``.
+You can run your own experiments by editing the ``gma.py`` file. To do so, open the file in a text editor like [Nano](https://linuxize.com/post/how-to-use-nano-text-editor/#opening-and-creating-files): ``nano gma.py``.
 Scroll down to the bottom of the file.
 There, you will find four dictionaries storing the [configuration and parameters](./docs/parameters.md).
-Adjust the parameters to your liking, save the file and start the experiment via ``python main.py``.
+Adjust the parameters to your liking, save the file and start the experiment via ``python gma.py``.
 If you set the verbose-option to True, detailed status reports will be printed on screen.
 
 ___

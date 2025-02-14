@@ -10,9 +10,9 @@ your specific experiment might work better with other values.
 The tables below describe the individual parameters, along with their default values
 and references to further information.
 
-The ``run``-Method in ``main.py`` expects four dictionaries as arguments that specify
+The ``run``-Method in ``gma.py`` expects four dictionaries as arguments that specify
 the parameters for different stages of the attack.
-``main.py`` (Line 667 onwards) as well as the benchmarking scripts already contain the required
+``gma.py`` (Line 667 onwards) as well as the benchmarking scripts already contain the required
 dictionaries, which are filled with default values. You may edit the values freely.
 ___
 ## Global Configuration

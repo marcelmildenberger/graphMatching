@@ -209,7 +209,7 @@ class BFEncoder(Encoder):
 
         if store_encs:
             cache = dict(zip(uids, enc))
-            with open("./data/encodings/encoding_dict.pck", "wb") as f:
+            with open("./graphMatching/data/encodings/encoding_dict.pck", "wb") as f:
                 pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
 
         uids = np.array(uids)
