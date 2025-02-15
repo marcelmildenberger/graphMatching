@@ -8,3 +8,5 @@
 *.pyc
 *.edg
 *.tsv
+*.pck
+*.h5

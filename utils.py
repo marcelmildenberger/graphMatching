@@ -3,13 +3,15 @@ from typing import Sequence
 from collections import defaultdict
 import statistics
 
-def read_tsv(path: str, header: bool = True, as_dict: bool = False, delim: str = "\t") -> Sequence[Sequence[str]]:
+def read_tsv(path: str, skip_header: bool = True, as_dict: bool = False, delim: str = "\t") -> Sequence[Sequence[str]]:
     data = {} if as_dict else []
     uid = []
     with open(path, "r") as f:
         reader = csv.reader(f, delimiter=delim)
-        if header:
-            next(reader)
+        if skip_header:
+            header = next(reader)
+        else:
+            header = next(reader)
         for row in reader:
             if as_dict:
                 assert len(row) == 3, "Dict mode only supports rows with two values + uid"
@@ -17,7 +19,7 @@ def read_tsv(path: str, header: bool = True, as_dict: bool = False, delim: str =
             else:
                 data.append(row[:-1])
                 uid.append(row[-1])
-    return data, uid
+    return data, uid, header
 
 
 def save_tsv(data, path: str, delim: str = "\t", mode="w", write_header: bool = False, header: list[str]= None):

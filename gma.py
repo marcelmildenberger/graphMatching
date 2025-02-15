@@ -103,14 +103,15 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if os.path.isfile("./graphMatching/data/encoded/alice-%s.h5" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's encoded records")
-
-        with open("./graphMatching/data/encodings/encoding_dict.pck", "rb") as f:
-                enc_pck = pickle.load(f)
-        print("enc_pck", enc_pck)
-
         # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
         # floats to save memory.
         alice_enc_sim = hkl.load("./graphMatching/data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
+
+        alice_enc = hkl.load("./data/available_to_eve/alice_data_encoded_%s.h5" % alice_enc_hash)
+        alice_header = alice_enc[0]
+        alice_data_encoded = alice_enc[1:]
+        not_reidentified_individuals_header = alice_header
+
         # First row contains the number of records initially present in Alice's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
         # Extract the value and omit first row.
@@ -131,7 +132,10 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["Verbose"]:
             print("Loading Alice's data")
 
-        alice_data, alice_uids = read_tsv(GLOBAL_CONFIG["Data"])
+        alice_data, alice_uids, alice_header = read_tsv(GLOBAL_CONFIG["Data"], skip_header=False)
+        alice_header.insert(-1, ENC_CONFIG["AliceAlgo"].lower())
+        reidentified_individuals_header = alice_header
+        not_reidentified_individuals_header = alice_header[-2:]
 
         if GLOBAL_CONFIG["DropFrom"] == "Both":
             # Compute the maximum number of overlapping records possible for the given dataset size and overlap
@@ -201,10 +205,16 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
         alice_enc_sim, alice_data_combined_with_encoding = alice_encoder.encode_and_compare_and_append(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True,
                                                         store_encs=GLOBAL_CONFIG["SaveAliceEncs"])
-        alice_data_encoded = [row[2:] for row in alice_data_combined_with_encoding]
+        alice_data_encoded = [row[-2:] for row in alice_data_combined_with_encoding]
+        
+        alice_data_combined_with_encoding = np.vstack((alice_header, alice_data_combined_with_encoding))
+        alice_data_encoded = np.vstack((alice_header[-2:], alice_data_encoded))
 
-        save_tsv(alice_data_combined_with_encoding, "./graphMatching/data/gma_result/alice_data_combined_with_encoding.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
-        save_tsv(alice_data_encoded, "./graphMatching/data/eves_information/alice_data_encoded.tsv", header=["bloomfilter", "uid"], write_header=True)
+        save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.tsv" % alice_enc_hash)
+        hkl.dump(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.h5" % alice_enc_hash, mode="w")
+
+        save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.tsv" % alice_enc_hash)
+        hkl.dump(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.h5" % alice_enc_hash, mode="w")
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
@@ -261,6 +271,11 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
         # floats to save memory.
         eve_enc_sim = hkl.load("./graphMatching/data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
+
+        eve_enc = hkl.load("./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % eve_enc_hash)
+        eve_header = eve_enc[0]
+        reidentified_individuals_header = eve_header
+        eve_data_combined_with_encoding = eve_enc[1:]
         # First row contains the number of records initially present in Eve's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
         # Extract the value and omit first row.
@@ -273,7 +288,9 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # If no pre-computed encoding are found, load and encode Eve's Data
         if GLOBAL_CONFIG["Verbose"]:
             print("Loading Eve's data")
-        eve_data, eve_uids = read_tsv(GLOBAL_CONFIG["Data"])
+        eve_data, eve_uids, eve_header = read_tsv(GLOBAL_CONFIG["Data"], skip_header=False)
+
+        eve_header.insert(-1, ENC_CONFIG["EveAlgo"].lower())
 
         # If records are dropped from both datasets, Eve's dataset consists of the overlapping records and the
         # available records, i.e. those records that have not been added to Alice's dataset.
@@ -331,8 +348,9 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         eve_enc_sim, eve_data_combined_with_encoding = eve_encoder.encode_and_compare_and_append(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
         
-        save_tsv(eve_data_combined_with_encoding, "./graphMatching/data/gma_result/eve_data_combined_with_encoding.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
-        save_tsv(eve_data_combined_with_encoding, "./graphMatching/data/eves_information/eve_data_combined_with_encoding.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
+        eve_data_combined_with_encoding = np.vstack((eve_header, eve_data_combined_with_encoding))
+        save_tsv(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encoding_%s.tsv" % eve_enc_hash)
+        hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % eve_enc_hash, mode="w")
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
@@ -668,9 +686,9 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         elapsed_relevant = time.time() - start_alice_emb
 
     #Results for eve of the GMA
-    reidentified_individuals = []
+    reidentified_individuals = [reidentified_individuals_header]
     reidentified_ids = []
-    not_reidentified_individuals = []
+    not_reidentified_individuals = [not_reidentified_individuals_header]
 
     # Evaluation
     correct = 0
@@ -681,16 +699,19 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             correct += 1
             reidentified_ids.append(int(smaller[2:]))
 
-    for alice_entry in alice_data_encoded:
+    for alice_entry in alice_data_encoded[1:]:
         if int(alice_entry[-1]) in reidentified_ids:
-            for eve_entry in eve_data_combined_with_encoding:
+            for eve_entry in eve_data_combined_with_encoding[1:]:
                 if(int(eve_entry[-1]) == int(alice_entry[-1])):
-                    reidentified_individuals.append([eve_entry[0], eve_entry[1], alice_entry[0], eve_entry[-1]])
+                    reidentified_individuals.append(list(eve_entry[:-2]) + [alice_entry[0]] + [eve_entry[-1]])
         else:
             not_reidentified_individuals.append(alice_entry)
 
-    save_tsv(reidentified_individuals, "./graphMatching/data/eves_information/reidentified_individuals.tsv", header=["surname", "firstname", "bloomfilter", "uid"], write_header=True)
-    save_tsv(not_reidentified_individuals, "./graphMatching/data/eves_information/not_reidentified_individuals.tsv", header=["bloomfilter", "uid"], write_header=True)
+    save_tsv(reidentified_individuals, "./data/available_to_eve/reidentified_individuals.tsv")
+    hkl.dump(reidentified_individuals, "./data/available_to_eve/reidentified_individuals.h5", mode="w")
+
+    save_tsv(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals.tsv",)
+    hkl.dump(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals.h5", mode="w")
 
     if GLOBAL_CONFIG["DropFrom"] == "Both":
         success_rate = correct / overlap_count
@@ -730,7 +751,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         save_tsv([vals], "data/benchmark.tsv", mode="a")
 
-    return mapping
+    return reidentified_individuals, not_reidentified_individuals
 
 
 if __name__ == "__main__":
