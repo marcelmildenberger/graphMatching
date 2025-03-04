@@ -46,9 +46,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     assert (ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs), "Error: Encoding " \
                                     "method must be one of %s" % ((supported_encs))
 
-    if GLOBAL_CONFIG["BenchMode"]:
-        start_total = time.time()
-
     # Compute hashes of configuration to store/load data and thus avoid redundant computations.
     # Using MD5 because Python's native hash() is not stable across processes
     if GLOBAL_CONFIG["DropFrom"] == "Alice":
@@ -122,10 +119,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             with open("./graphMatching/data/encoded/overlap-%s.pck" % alice_enc_hash, "rb") as f:
                 overlap_count = pickle.load(f)
 
-        # Set duration of encoding to -1 to indicate that stored records were used (Only relevant when benchmarking)
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_alice_enc = -1
-
     else:
         # If no pre-computed encoding are found, load and encode Alice's Data
         if GLOBAL_CONFIG["Verbose"]:
@@ -167,10 +160,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_data = [alice_data[i] for i in selected_alice]
         alice_uids = [alice_uids[i] for i in selected_alice]
         n_alice = len(alice_uids)  # Initial number of records in alice's dataset. Required for success calculation
-
-        # Start timer for measuring the duration of the encoding of Alice's data.
-        if GLOBAL_CONFIG["BenchMode"]:
-            start_alice_enc = time.time()
 
         # Define the encoder to be used for Alice's data.
         ##############################
@@ -220,14 +209,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_skip_thresholding = True
 
         del alice_data
-
-        # Compute duration of Alice's encoding
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_alice_enc = time.time() - start_alice_enc
-
-        # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
-        if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("./graphMatching/dev/alice.edg", alice_enc_sim, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Alice's data")
@@ -281,9 +262,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Extract the value and omit first row.
         n_eve = int(eve_enc_sim[0][2])
         eve_enc_sim = eve_enc_sim[1:]
-        # Set duration of encoding to -1 to indicate that stored records were used (Only relevant when benchmarking)
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_eve_enc = -1
+
     else:
         # If no pre-computed encoding are found, load and encode Eve's Data
         if GLOBAL_CONFIG["Verbose"]:
@@ -310,10 +289,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         eve_data = [eve_data[i] for i in selected_eve]
         eve_uids = [eve_uids[i] for i in selected_eve]
         n_eve = len(eve_uids)
-
-        # Start timer for measuring the duration of the encoding of Alice's data.
-        if GLOBAL_CONFIG["BenchMode"]:
-            start_eve_enc = time.time()
 
         # Define the encoder to be used for Eve's data.
         ##############################
@@ -342,7 +317,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
-
         eve_enc_sim, eve_data_combined_with_encoding = eve_encoder.encode_and_compare_and_append(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
 
@@ -360,14 +334,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         del eve_data
 
-        # Compute duration of Alice's encoding
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_eve_enc = time.time() - start_eve_enc
-
-        # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
-        if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("./graphMatching/dev/eve.edg", eve_enc_sim, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
 
@@ -379,8 +345,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
-
-
 
     # Compute the threshold value for subsetting: Only keep the X% highest similarities.
     if not eve_skip_thresholding:
@@ -401,10 +365,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     #    EMBEDDING    #
     ###################
 
-    # Start timer to measure duration of embedding for Alice's data
-    if GLOBAL_CONFIG["BenchMode"]:
-        start_alice_emb = time.time()
-
     # Check if data has been embedded before. If yes, load stored embeddings from disk.
     if os.path.isfile("./graphMatching/data/embeddings/alice-%s.h5" % alice_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
@@ -416,10 +376,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Loads the UIDs of the embeddings
         with open("./graphMatching/data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "rb") as f:
             alice_uids = pickle.load(f)
-
-        # Set embedding duration to -1 to inidicate that pre-computed embeddings were used.
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_alice_emb = -1
 
     else:
         # If no pre-computed embeddings are found, embed the encoded data
@@ -451,16 +407,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
             alice_embedder.train(alice_enc_sim)
 
-
-
-        # Compute the duration of the embedding
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_alice_emb = time.time() - start_alice_emb
-
-        # Optionally save trained model for further inspection
-        if GLOBAL_CONFIG["DevMode"]:
-            alice_embedder.save_model("./graphMatching/dev", "alice.mod")
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Done embedding Alice's data.")
 
@@ -490,16 +436,8 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         with open("./graphMatching/data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "rb") as f:
             eve_uids = pickle.load(f)
 
-        # Set embedding duration to -1 to inidicate that pre-computed embeddings were used.
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_eve_emb = -1
-
     else:
         # If no pre-computed embeddings are found, embed the encoded data
-        # Start timer
-        if GLOBAL_CONFIG["BenchMode"]:
-            start_eve_emb = time.time()
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Embedding Eve's data. This may take a while...")
 
@@ -526,14 +464,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                          EMB_CONFIG["EveNormalize"])
             eve_embedder.train(eve_enc_sim)
 
-        # Compute the duration of the embedding
-        if GLOBAL_CONFIG["BenchMode"]:
-            elapsed_eve_emb = time.time() - start_eve_emb
-
-        # Optionally save trained model for further inspection
-        if GLOBAL_CONFIG["DevMode"]:
-            eve_embedder.save_model("./graphMatching/dev", "eve.mod")
-
         if GLOBAL_CONFIG["Verbose"]:
             print("Done embedding Eve's data.")
 
@@ -555,10 +485,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     #############################
     #    EMBEDDING ALIGNMENT    #
     #############################
-
-    # Start the timer for measuring the duration of alignment
-    if GLOBAL_CONFIG["BenchMode"]:
-        start_align_prep = time.time()
 
     # Select the Data to be used for alignment:
     # GroundTruth:  If Ground Truth is known, the first "MaxLoad" UIDs of Alices Data are selected. The corresponding
@@ -608,11 +534,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_sub = np.stack(alice_sub, axis=0)
         eve_sub = np.stack(eve_sub, axis=0)
 
-    # Calculate duration of preprocessing for alignment
-    if GLOBAL_CONFIG["BenchMode"]:
-        elapsed_align_prep = time.time() - start_align_prep
-        start_align = time.time()
-
     if GLOBAL_CONFIG["Verbose"]:
         print("Aligning vectors. This may take a while.")
 
@@ -638,16 +559,9 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     # Projects Eve's embeddings into Alice's space by multiplying Eve's embeddings with the transformation matrix.
     eve_embeddings = np.dot(eve_embeddings, transformation_matrix.T)
 
-    # Compute duration of alignment.
-    if GLOBAL_CONFIG["BenchMode"]:
-        elapsed_align = time.time() - start_align
-
     if GLOBAL_CONFIG["Verbose"]:
         print("Done.")
         print("Performing bipartite graph matching")
-
-    if GLOBAL_CONFIG["BenchMode"]:
-        start_mapping = time.time()
 
     # Creates the "matcher" object responsible for the bipartite graph matching.
     # MinWeight:    Minimum Weight bipartite matching: Finds a full 1-to-1 mapping such that the overall sum of weights
@@ -677,11 +591,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     # Note that mappings are included twice: Once as a mapping from S to L and once fom L to S.
     # These redundant mappings must be ignored when computing the success rate.
     mapping = matcher.match(alice_embeddings, alice_uids, eve_embeddings, eve_uids)
-
-    # Compute durations of mapping and overall attack.
-    if GLOBAL_CONFIG["BenchMode"]:
-        elapsed_mapping = time.time() - start_mapping
-        elapsed_relevant = time.time() - start_alice_emb
 
     #Results for eve of the GMA
     reidentified_individuals = [reidentified_individuals_header]
@@ -723,146 +632,4 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
     print("Success rate: %f" % success_rate)
 
-    if GLOBAL_CONFIG["BenchMode"]:
-        elapsed_total = time.time() - start_total
-        keys = ["timestamp"]
-        vals = [time.time()]
-        for key, val in EMB_CONFIG.items():
-            keys.append(key)
-            vals.append(val)
-        for key, val in ENC_CONFIG.items():
-            keys.append(key)
-            vals.append(val)
-        for key, val in GLOBAL_CONFIG.items():
-            keys.append(key)
-            vals.append(val)
-        for key, val in ALIGN_CONFIG.items():
-            keys.append(key)
-            vals.append(val)
-        keys += ["success_rate", "correct", "n_alice", "n_eve", "elapsed_total", "elapsed_alice_enc", "elapsed_eve_enc",
-                 "elapsed_alice_emb", "elapsed_eve_emb", "elapsed_align_prep", "elapsed_align", "elapsed_mapping",
-                 "elapsed_relevant"]
-
-        vals += [success_rate, correct, n_alice, n_eve, elapsed_total, elapsed_alice_enc, elapsed_eve_enc,
-                 elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping,
-                 elapsed_relevant]
-
-        if not os.path.isfile("data/benchmark.tsv"):
-            save_tsv([keys], "data/benchmark.tsv")
-
-        save_tsv([vals], "data/benchmark.tsv", mode="a")
-
     return reidentified_individuals, not_reidentified_individuals
-
-
-if __name__ == "__main__":
-    # Parameters for running the GMA
-    # See ./graphMatching/docs/parameters.md for details.
-
-    GLOBAL_CONFIG = {
-        "Data": "./graphMatching/data/titanic_full.tsv",
-        "Overlap": 0.7,
-        "DropFrom": "Alice",
-        "DevMode": False,  # Development Mode, saves some intermediate results to the /dev directory
-        "BenchMode": False,  # Benchmark Mode
-        "Verbose": True,  # Print Status Messages?
-        "MatchingMetric": "cosine",
-        "Matching": "MinWeight",
-        "Workers": -1,
-        "SaveAliceEncs": False,
-        "SaveEveEncs": False
-    }
-
-    ENC_CONFIG = {
-        "AliceAlgo": "BloomFilter",
-        "AliceSecret": "SuperSecretSalt1337",
-        "AliceN": 2,
-        "AliceMetric": "dice",
-        "EveAlgo": "BloomFilter",
-        "EveSecret": "ATotallyDifferentString42",
-        "EveN": 2,
-        "EveMetric": "dice",
-        # For BF encoding
-        "AliceBFLength": 1024,
-        "AliceBits": 10,
-        "AliceDiffuse": False,
-        "AliceT": 10,
-        "AliceEldLength": 1024,
-        "EveBFLength": 1024,
-        "EveBits": 10,
-        "EveDiffuse": False,
-        "EveT": 10,
-        "EveEldLength": 1024,
-        # For TMH encoding
-        "AliceNHash": 1024,
-        "AliceNHashBits": 64,
-        "AliceNSubKeys": 8,
-        "Alice1BitHash": True,
-        "EveNHash": 1024,
-        "EveNHashBits": 64,
-        "EveNSubKeys": 8,
-        "Eve1BitHash": True,
-        # For 2SH encoding
-        "AliceNHashFunc": 10,
-        "AliceNHashCol": 1000,
-        "AliceRandMode": "PNG",
-        "EveNHashFunc": 10,
-        "EveNHashCol": 1000,
-        "EveRandMode": "PNG",
-        # For PST Encoding
-        "AlicePSTK": 20,
-        "AlicePSTL": 8,
-        "AlicePSTP": None,
-        "AliceCharset": string.printable,
-        "EvePSTK": 20,
-        "EvePSTL": 8,
-        "EvePSTP": None,
-        "EveCharset": string.printable
-
-    }
-
-    EMB_CONFIG = {
-        "Algo": "Node2Vec",
-        "AliceQuantile": 0.9,
-        "AliceDiscretize": False,
-        "AliceDim": 128,
-        "AliceContext": 10,
-        "AliceNegative": 1,
-        "AliceNormalize": True,
-        "EveQuantile": 0.9,
-        "EveDiscretize": False,
-        "EveDim": 128,
-        "EveContext": 10,
-        "EveNegative": 1,
-        "EveNormalize": True,
-        # For Node2Vec
-        "AliceWalkLen": 100,
-        "AliceNWalks": 20,
-        "AliceP": 250,
-        "AliceQ": 300,
-        "AliceEpochs": 5,
-        "AliceSeed": 42,
-        "EveWalkLen": 100,
-        "EveNWalks": 20,
-        "EveP": 250,
-        "EveQ": 300,
-        "EveEpochs": 5,
-        "EveSeed": 42
-    }
-
-    ALIGN_CONFIG = {
-        "RegWS": max(0.1, GLOBAL_CONFIG["Overlap"]/2), #0005
-        "RegInit":1, # For BF 0.25
-        "Batchsize": 1, # 1 = 100%
-        "LR": 200.0,
-        "NIterWS": 100,
-        "NIterInit": 5 ,  # 800
-        "NEpochWS": 100,
-        "LRDecay": 1,
-        "Sqrt": True,
-        "EarlyStopping": 10,
-        "Selection": "None",
-        "MaxLoad": None,
-        "Wasserstein": True
-    }
-    mp = run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG)

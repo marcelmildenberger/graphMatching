@@ -187,7 +187,6 @@ class TSHEncoder(Encoder):
             cache[uids_as_float[i]] = enc
             encodings.append(enc)
         combined_data = np.column_stack((data, encodings, uids))
-        print("comb.data:", combined_data)
         del output_generator, data
 
         gc.collect()
