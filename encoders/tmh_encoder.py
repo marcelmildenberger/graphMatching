@@ -145,19 +145,25 @@ class TMHEncoder(Encoder):
             hashes[i] = self.hash_qgrams(qg)
         return hashes
 
-    def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
+    def encode_and_compare_and_append(self, data, uids, metric, sim=True, store_encs=False):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        uids = [float(u) for u in uids]
-        data = ["".join(d).replace(" ", "").lower() for d in data]
+        uids_as_float = [float(u) for u in uids]
+        data_joined = ["".join(d).replace(" ", "").lower() for d in data]
         # Split each string in the data into a list of qgrams to process
-        data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
+        data_qgrams = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data_joined]
         parallel = Parallel(n_jobs=self.workers)
-        output_generator = parallel(delayed(self.hash_qgrams)(i) for i in data)
+        output_generator = parallel(delayed(self.hash_qgrams)(i) for i in data_qgrams)
         cache = {}
+        enc_as_strings = []
         for i, enc in tqdm(enumerate(output_generator), desc="Encoding", disable=not self.verbose, total=len(uids)):
-            cache[uids[i]] = enc
-        del output_generator
+            cache[uids_as_float[i]] = enc
+            enc_as_int = enc.astype(int)
+            enc_as_string = ''.join(map(str, enc_as_int))  # Convert entire encoding to single string
+            enc_as_strings.append(enc_as_string)
+        combined_data = np.column_stack((data, enc_as_strings, uids))
+        del output_generator, data
+
         if store_encs:
             tmpdict = dict()
 
@@ -167,14 +173,15 @@ class TMHEncoder(Encoder):
                 pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
             del tmpdict
 
-        numex = len(uids)
+        numex = len(uids_as_float)
         output_generator = parallel(
             delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers * 4))
         inds = np.vstack(output_generator)
         inds = np.array_split(inds, self.workers)
-        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim, self.one_bit_hash) for i in inds)
+        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids_as_float, metric, sim, self.one_bit_hash) for i in inds)
         del cache
-        return np.vstack(pw_metrics)
+
+        return np.vstack(pw_metrics), combined_data
 
     def get_encoding_dict(self, data, uids):
 

@@ -90,7 +90,8 @@ class NonEncoder(Encoder):
         self.verbose = verbose
         self.workers = os.cpu_count() if workers == -1 else workers
 
-    def encode_and_compare(self, data, uids, metric, sim=True, store_encs = False):
+    def encode_and_compare_and_append(self, data, uids, metric, sim=True, store_encs = False):
+        combined_data = np.column_stack((data, uids))
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         numex = len(uids)
@@ -143,7 +144,7 @@ class NonEncoder(Encoder):
         del inds
         gc.collect()
         #...and add the metrics
-        return re
+        return re, combined_data
 
 
     def get_encoding_dict(self, data, uids):

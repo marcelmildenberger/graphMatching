@@ -18,11 +18,10 @@ from graphMatching.encoders.bf_encoder import BFEncoder
 from graphMatching.encoders.tmh_encoder import TMHEncoder
 from graphMatching.encoders.tsh_encoder import TSHEncoder
 from graphMatching.encoders.non_encoder import NonEncoder
-from graphMatching.encoders.pst_encoder import PSTEncoder
 from graphMatching.matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
 
 from graphMatching.matchers.spatial import NNMatcher
-from graphMatching.utils import *
+from utils import *
 
 
 def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
@@ -43,7 +42,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                "DropFrom"] in supported_drops, "Error: Data must be dropped from one of %s" % (
         (supported_drops))
 
-    supported_encs = ["BloomFilter", "TabMinHash", "TwoStepHash", "PST", "Heng", "None", None]
+    supported_encs = ["BloomFilter", "TabMinHash", "TwoStepHash", "None", None]
     assert (ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs), "Error: Encoding " \
                                     "method must be one of %s" % ((supported_encs))
 
@@ -191,10 +190,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_encoder = TSHEncoder(ENC_CONFIG["AliceNHashFunc"], ENC_CONFIG["AliceNHashCol"], ENC_CONFIG["AliceN"],
                                     ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
                                     verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
-        elif ENC_CONFIG["AliceAlgo"] in ["PST", "Heng"]:
-            alice_encoder = PSTEncoder(ENC_CONFIG["AlicePSTK"], ENC_CONFIG["AlicePSTL"], ENC_CONFIG["AlicePSTP"],
-                                       charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
-                                       workers=GLOBAL_CONFIG["Workers"])
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
@@ -206,7 +201,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         alice_enc_sim, alice_data_combined_with_encoding = alice_encoder.encode_and_compare_and_append(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True,
                                                         store_encs=GLOBAL_CONFIG["SaveAliceEncs"])
         alice_data_encoded = [row[-2:] for row in alice_data_combined_with_encoding]
-        
+
         alice_data_combined_with_encoding = np.vstack((alice_header, alice_data_combined_with_encoding))
         alice_data_encoded = np.vstack((alice_header[-2:], alice_data_encoded))
 
@@ -274,7 +269,12 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         eve_enc = hkl.load("./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % eve_enc_hash)
         eve_header = eve_enc[0]
+        if ENC_CONFIG["EveAlgo"] == "None":
+            eve_header = eve_header[:-1]
+            eve_header = np.hstack((eve_header, not_reidentified_individuals_header))
+
         reidentified_individuals_header = eve_header
+
         eve_data_combined_with_encoding = eve_enc[1:]
         # First row contains the number of records initially present in Eve's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
@@ -290,7 +290,9 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             print("Loading Eve's data")
         eve_data, eve_uids, eve_header = read_tsv(GLOBAL_CONFIG["Data"], skip_header=False)
 
-        eve_header.insert(-1, ENC_CONFIG["EveAlgo"].lower())
+        if ENC_CONFIG["EveAlgo"] != "None":
+            eve_header.insert(-1, ENC_CONFIG["EveAlgo"].lower())
+
 
         # If records are dropped from both datasets, Eve's dataset consists of the overlapping records and the
         # available records, i.e. those records that have not been added to Alice's dataset.
@@ -332,10 +334,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
                                     ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
                                     verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
-        elif ENC_CONFIG["AliceAlgo"] in ["PST", "Heng"]:
-            eve_encoder = PSTEncoder(ENC_CONFIG["EvePSTK"], ENC_CONFIG["EvePSTL"], ENC_CONFIG["EvePSTP"],
-                                       charset=ENC_CONFIG["EveCharset"], verbose=GLOBAL_CONFIG["Verbose"],
-                                       workers=GLOBAL_CONFIG["Workers"])
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
@@ -347,7 +345,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         eve_enc_sim, eve_data_combined_with_encoding = eve_encoder.encode_and_compare_and_append(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
-        
+
         eve_data_combined_with_encoding = np.vstack((eve_header, eve_data_combined_with_encoding))
         save_tsv(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encoding_%s.tsv" % eve_enc_hash)
         hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % eve_enc_hash, mode="w")
@@ -703,15 +701,18 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if int(alice_entry[-1]) in reidentified_ids:
             for eve_entry in eve_data_combined_with_encoding[1:]:
                 if(int(eve_entry[-1]) == int(alice_entry[-1])):
-                    reidentified_individuals.append(list(eve_entry[:-2]) + [alice_entry[0]] + [eve_entry[-1]])
+                    if ENC_CONFIG["EveAlgo"] != "None":
+                        reidentified_individuals.append(list(eve_entry[:-2]) + [alice_entry[0]] + [eve_entry[-1]])
+                    else:
+                        reidentified_individuals.append(list(eve_entry[:-1]) + [alice_entry[0]] + [eve_entry[-1]])
         else:
             not_reidentified_individuals.append(alice_entry)
 
-    save_tsv(reidentified_individuals, "./data/available_to_eve/reidentified_individuals.tsv")
-    hkl.dump(reidentified_individuals, "./data/available_to_eve/reidentified_individuals.h5", mode="w")
+    save_tsv(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s.tsv" % eve_enc_hash)
+    hkl.dump(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s.h5" % eve_enc_hash, mode="w")
 
-    save_tsv(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals.tsv",)
-    hkl.dump(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals.h5", mode="w")
+    save_tsv(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals_%s.tsv" % eve_enc_hash)
+    hkl.dump(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals_%s.h5" % eve_enc_hash, mode="w")
 
     if GLOBAL_CONFIG["DropFrom"] == "Both":
         success_rate = correct / overlap_count

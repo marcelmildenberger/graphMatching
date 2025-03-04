@@ -204,7 +204,6 @@ class BFEncoder(Encoder):
         enc = self.encode(data_joined)
         enc_as_int = enc.astype(int)
         enc_as_string = [''.join(map(str, bits)) for bits in enc_as_int]
-
         combined_data = np.column_stack((data, enc_as_string, uids))
 
         if store_encs:

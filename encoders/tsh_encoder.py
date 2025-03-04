@@ -173,18 +173,23 @@ class TSHEncoder(Encoder):
         else:
             return self.enc(data)
 
-    def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
+    def encode_and_compare_and_append(self, data, uids, metric, sim=True, store_encs=False):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         numex = len(uids)
-        uids = np.array(uids, dtype=np.float32)
+        uids_as_float = np.array(uids, dtype=np.float32)
 
         parallel = Parallel(n_jobs=self.workers)
         output_generator = parallel(delayed(self.enc)(i) for i in data)
         cache = {}
+        encodings = []
         for i, enc in enumerate(output_generator):
-            cache[uids[i]] = enc
+            cache[uids_as_float[i]] = enc
+            encodings.append(enc)
+        combined_data = np.column_stack((data, encodings, uids))
+        print("comb.data:", combined_data)
         del output_generator, data
+
         gc.collect()
 
         if store_encs:
@@ -204,7 +209,7 @@ class TSHEncoder(Encoder):
         inds = np.array_split(inds, self.workers)
         gc.collect()
 
-        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids, metric, sim) for i in inds)
+        pw_metrics = parallel(delayed(compute_metrics)(i, cache, uids_as_float, metric, sim) for i in inds)
         pw_metrics = np.concatenate(pw_metrics, axis=None)
         del cache
         gc.collect()
@@ -217,14 +222,14 @@ class TSHEncoder(Encoder):
         start = 0
         for i, ind in enumerate(inds):
             end = start + len(ind)
-            ind[:, 0] = uids[ind[:, 0]]
-            ind[:, 1] = uids[ind[:, 1]]
+            ind[:, 0] = uids_as_float[ind[:, 0]]
+            ind[:, 1] = uids_as_float[ind[:, 1]]
             re[start:end, 0:2] = ind
             start += len(ind)
-        del inds, uids
+        del inds, uids_as_float
         gc.collect()
         # ...and add the metrics
-        return re
+        return re, combined_data
 
     def get_encoding_dict(self, data, uids):
         uids = np.array(uids, dtype=np.float32)
