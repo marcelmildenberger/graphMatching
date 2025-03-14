@@ -20,7 +20,7 @@ from graphMatching.matchers.spatial import NNMatcher
 from utils import *
 
 
-def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash):
+def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash):
 
 
     # Sanity Check: Ensure that valid options were specified by the user
@@ -147,11 +147,12 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, eve_enc_hash, a
         alice_data_combined_with_encoding = np.vstack((alice_header, alice_data_combined_with_encoding))
         alice_data_encoded = np.vstack((alice_header[-2:], alice_data_encoded))
 
-        save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.tsv" % alice_enc_hash)
         hkl.dump(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.h5" % alice_enc_hash, mode="w")
-
-        save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.tsv" % alice_enc_hash)
         hkl.dump(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.h5" % alice_enc_hash, mode="w")
+        if(DEA_CONFIG["DevMode"]):
+            save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.tsv" % alice_enc_hash)
+            save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.tsv" % alice_enc_hash)
+
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
@@ -274,8 +275,9 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, eve_enc_hash, a
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
 
         eve_data_combined_with_encoding = np.vstack((eve_header, eve_data_combined_with_encoding))
-        save_tsv(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encoding_%s.tsv" % eve_enc_hash)
         hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % eve_enc_hash, mode="w")
+        if(DEA_CONFIG["DevMode"]):
+            save_tsv(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encoding_%s.tsv" % eve_enc_hash)
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
@@ -564,17 +566,20 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, eve_enc_hash, a
             for eve_entry in eve_data_combined_with_encoding[1:]:
                 if(int(eve_entry[-1]) == int(alice_entry[-1])):
                     if ENC_CONFIG["EveAlgo"] != "None":
-                        reidentified_individuals.append(list(eve_entry[:-2]) + [alice_entry[0]] + [eve_entry[-1]])
+                        reidentified_individuals.append(np.concatenate((eve_entry[:-2], [alice_entry[0]], [eve_entry[-1]])).tolist())
                     else:
-                        reidentified_individuals.append(list(eve_entry[:-1]) + [alice_entry[0]] + [eve_entry[-1]])
+                        reidentified_individuals.append(np.concatenate((eve_entry[:-1], [alice_entry[0]], [eve_entry[-1]])).tolist())
         else:
             not_reidentified_individuals.append(alice_entry)
 
-    save_tsv(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
-    hkl.dump(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
 
-    save_tsv(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
+    hkl.dump(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
     hkl.dump(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
+
+    if(DEA_CONFIG["DevMode"]):
+        save_tsv(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
+        save_tsv(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
+
 
     if GLOBAL_CONFIG["DropFrom"] == "Both":
         success_rate = correct / overlap_count
