@@ -147,11 +147,11 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
         alice_data_combined_with_encoding = np.vstack((alice_header, alice_data_combined_with_encoding))
         alice_data_encoded = np.vstack((alice_header[-2:], alice_data_encoded))
 
-        hkl.dump(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.h5" % alice_enc_hash, mode="w")
-        hkl.dump(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.h5" % alice_enc_hash, mode="w")
+        hkl.dump(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
+        hkl.dump(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
         if(DEA_CONFIG["DevMode"]):
-            save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.tsv" % alice_enc_hash)
-            save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.tsv" % alice_enc_hash)
+            save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
+            save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
 
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
@@ -590,4 +590,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
 
     print("Success rate: %f" % success_rate)
 
-    return reidentified_individuals, not_reidentified_individuals
+    try:
+        return reidentified_individuals, not_reidentified_individuals, alice_data_combined_with_encoding
+    except NameError:
+        return reidentified_individuals, not_reidentified_individuals
