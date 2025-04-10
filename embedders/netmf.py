@@ -8,7 +8,6 @@ import aesara
 import platform
 if platform.system() == "Darwin":
     # macOS
-    import numpy as np
     dot_product = np.dot
     print("Using NumPy dot (Mac)")
 else:
