@@ -56,7 +56,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
         # floats to save memory.
         alice_enc_sim = hkl.load("./graphMatching/data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
 
-        alice_enc = hkl.load("./data/available_to_eve/alice_data_encoded_%s.h5" % alice_enc_hash)
+        alice_enc = hkl.load("./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
         alice_header = alice_enc[0]
         alice_data_encoded = alice_enc[1:]
         not_reidentified_individuals_header = alice_header
@@ -202,7 +202,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
         # floats to save memory.
         eve_enc_sim = hkl.load("./graphMatching/data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
 
-        eve_enc = hkl.load("./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % eve_enc_hash)
+        eve_enc = hkl.load("./data/available_to_eve/eve_data_combined_with_encodings_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
         eve_header = eve_enc[0]
         if ENC_CONFIG["EveAlgo"] == "None":
             eve_header = eve_header[:-1]
@@ -275,7 +275,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
 
         eve_data_combined_with_encoding = np.vstack((eve_header, eve_data_combined_with_encoding))
-        hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % eve_enc_hash, mode="w")
+        hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
         if(DEA_CONFIG["DevMode"]):
             save_tsv(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encoding_%s.tsv" % eve_enc_hash)
 
