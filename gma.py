@@ -149,7 +149,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
 
         hkl.dump(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
         hkl.dump(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
-        if(DEA_CONFIG["DevMode"]):
+        if(GLOBAL_CONFIG["DevMode"]):
             save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
             save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
 
@@ -276,7 +276,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
 
         eve_data_combined_with_encoding = np.vstack((eve_header, eve_data_combined_with_encoding))
         hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
-        if(DEA_CONFIG["DevMode"]):
+        if(GLOBAL_CONFIG["DevMode"]):
             save_tsv(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encoding_%s.tsv" % eve_enc_hash)
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
@@ -576,7 +576,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
     hkl.dump(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
     hkl.dump(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
 
-    if(DEA_CONFIG["DevMode"]):
+    if(GLOBAL_CONFIG["DevMode"]):
         save_tsv(not_reidentified_individuals, "./data/available_to_eve/not_reidentified_individuals_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
         save_tsv(reidentified_individuals, "./data/available_to_eve/reidentified_individuals_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
 
