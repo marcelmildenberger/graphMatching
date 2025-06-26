@@ -56,10 +56,13 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
         # floats to save memory.
         alice_enc_sim = hkl.load("./graphMatching/data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
 
-        alice_enc = hkl.load("./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
+        alice_enc = hkl.load("./data/available_to_eve/alice_data_encoded_%s.h5" % (alice_enc_hash))
+        alice_full = hkl.load("./data/dev/alice_data_complete_with_encoding_%s.h5" % (alice_enc_hash))
         alice_header = alice_enc[0]
+        alice_header_full = alice_full[0]
         alice_data_encoded = alice_enc[1:]
         not_reidentified_individuals_header = alice_header
+        reidentified_individuals_header = alice_header_full
 
         # First row contains the number of records initially present in Alice's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
@@ -147,11 +150,11 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
         alice_data_combined_with_encoding = np.vstack((alice_header, alice_data_combined_with_encoding))
         alice_data_encoded = np.vstack((alice_header[-2:], alice_data_encoded))
 
-        hkl.dump(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
-        hkl.dump(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
+        hkl.dump(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.h5" % (alice_enc_hash), mode="w")
+        hkl.dump(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.h5" % (alice_enc_hash), mode="w")
         if(GLOBAL_CONFIG["DevMode"]):
-            save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
-            save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s_%s_%s_%s.tsv" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
+            save_tsv(alice_data_encoded, "./data/available_to_eve/alice_data_encoded_%s.tsv" % (alice_enc_hash))
+            save_tsv(alice_data_combined_with_encoding, "./data/dev/alice_data_complete_with_encoding_%s.tsv" % (alice_enc_hash))
 
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
@@ -202,14 +205,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
         # floats to save memory.
         eve_enc_sim = hkl.load("./graphMatching/data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
 
-        eve_enc = hkl.load("./data/available_to_eve/eve_data_combined_with_encodings_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash))
-        eve_header = eve_enc[0]
-        if ENC_CONFIG["EveAlgo"] == "None":
-            eve_header = eve_header[:-1]
-            eve_header = np.hstack((eve_header, not_reidentified_individuals_header))
-
-        reidentified_individuals_header = eve_header
-
+        eve_enc = hkl.load("./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % (eve_enc_hash))
         eve_data_combined_with_encoding = eve_enc[1:]
         # First row contains the number of records initially present in Eve's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
@@ -225,7 +221,6 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
 
         if ENC_CONFIG["EveAlgo"] != "None":
             eve_header.insert(-1, ENC_CONFIG["EveAlgo"].lower())
-
 
         # If records are dropped from both datasets, Eve's dataset consists of the overlapping records and the
         # available records, i.e. those records that have not been added to Alice's dataset.
@@ -275,7 +270,7 @@ def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve
                                                  store_encs=GLOBAL_CONFIG["SaveEveEncs"])
 
         eve_data_combined_with_encoding = np.vstack((eve_header, eve_data_combined_with_encoding))
-        hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s_%s_%s_%s.h5" % (eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash), mode="w")
+        hkl.dump(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encodings_%s.h5" % (eve_enc_hash), mode="w")
         if(GLOBAL_CONFIG["DevMode"]):
             save_tsv(eve_data_combined_with_encoding, "./data/available_to_eve/eve_data_combined_with_encoding_%s.tsv" % eve_enc_hash)
 
