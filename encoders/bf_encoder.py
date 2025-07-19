@@ -221,6 +221,25 @@ class BFEncoder():
         pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
         return enc, pw_dice
 
+    def encode_and_compare_and_append(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
+                           metric: str, sim: bool = True, store_encs: bool = False) -> np.ndarray:
+        available_metrics = ["dice", "jaccard", "heng"]
+        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+
+        #print("DEB: Encoding")
+        data = [["".join(d).lower()] for d in data]
+        enc = self.encode(data)
+
+        if store_encs:
+            cache = dict(zip(uids, enc))
+            with open("./data/encodings/encoding_dict.pck", "wb") as f:
+                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+
+        uids = np.array(uids).astype(np.float64)
+
+        pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
+        return enc, pw_dice
+
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 
         #print("DEB: Encoding")
