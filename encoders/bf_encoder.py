@@ -3,7 +3,6 @@ import gc
 import os
 import pickle
 from typing import Sequence, AnyStr, List, Tuple, Any
-from .encoder import Encoder
 import numpy as np
 import hashlib
 import math
@@ -11,49 +10,58 @@ from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
-from sklearn.metrics import pairwise_distances_chunked
-from joblib import Parallel, delayed
+import numba as nb
+from scipy.special import binom
 
-def numpy_pairwise_combinations(x):
-    # https://carlostgameiro.medium.com/fast-pairwise-combinations-in-numpy-c29b977c33e2
-    tmp = np.triu_indices(len(x), k=1)
-    gc.collect()
-    idx = np.stack(tmp, axis=-1)
-    return x[idx]
+def pack_rows(bools: np.ndarray) -> np.ndarray:
+    """
+    bool  (n, m)  ->  uint64 (n, ceil(m/64))
+    """
+    packed = np.packbits(bools, axis=1, bitorder='little')  # uint8
+    return packed.view(np.uint64).copy()  # uint64
 
 
-def calc_metrics(uids, enc, metric, sim, inds):
-    bf_length = enc.shape[1]
+@nb.njit((nb.uint64)(nb.uint64), cache=True)
+def popcnt64(x):
+    # SWAR popcount that inlines nicely in Numba
+    x -= (x >> 1) & 0x5555555555555555
+    x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+    return ((((x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F) * 0x0101010101010101) >> 56) & 0xFF
 
-    left_matr = enc[inds[:, 0]]
-    right_matr = enc[inds[:, 1]]
 
-    del enc
-    # Compute number of matching bits and overall bits
-    and_sum = np.sum(np.logical_and(left_matr, right_matr), axis=1)
-    # Adjust for length of BF
-    and_sum = np.log(1 - (and_sum / bf_length))
+@nb.njit(parallel=True, fastmath=True, cache=True)
+def calc_dice_fast(enc, uids, num_combs, n_threads):
+    n, nWords = enc.shape
+    weights = np.empty(n, dtype=np.uint64)
+    for i in range(n):
+        w = 0
+        for w64 in enc[i]:
+            w += popcnt64(w64)
+        weights[i] = w
 
-    if metric == "jaccard":
-        or_sum = np.sum(np.logical_or(left_matr, right_matr), axis=1)
-        or_sum = np.log(1 - (or_sum / bf_length))
-        pw_metrics = and_sum / or_sum
-    else:
-        hamming_wt_right = np.sum(right_matr, axis=1)
-        hamming_wt_left = np.sum(left_matr, axis=1)
-        hamming_wt_right = np.log(1 - (hamming_wt_right / bf_length))
-        hamming_wt_left = np.log(1 - (hamming_wt_left / bf_length))
-        pw_metrics = 2 * and_sum / (hamming_wt_left + hamming_wt_right)
+    out_i = np.zeros(num_combs, np.float64)
+    out_j = np.zeros(num_combs, np.float64)
+    out_sim = np.zeros(num_combs, np.float64)
 
-    if not sim:
-        pw_metrics = 1 - pw_metrics
+    chunks = np.array_split(np.arange(n), n_threads)
+    for ch in nb.prange(len(chunks)):
+        for i in chunks[ch]:
+            cnt = 0
+            local_offset = sum([(n - 1) - x for x in range(i)])
+            for j in range(i + 1, n):
+                inter = 0
+                for w in range(nWords):
+                    inter += popcnt64(enc[i, w] & enc[j, w])
+                dice = 2.0 * inter / (weights[i] + weights[j])
+                out_i[local_offset + cnt] = uids[i]
+                out_j[local_offset + cnt] = uids[j]
+                out_sim[local_offset + cnt] = dice
+                cnt += 1
 
-    metrics_with_uids = np.zeros((len(inds), 3), dtype=np.float32)
-    metrics_with_uids[:, 0] = uids[inds[:, 0]]
-    metrics_with_uids[:, 1] = uids[inds[:, 1]]
-    metrics_with_uids[:, 2] = pw_metrics
-    return metrics_with_uids
-class BFEncoder(Encoder):
+    re = np.column_stack((out_i, out_j, out_sim))
+    return re
+
+class BFEncoder():
 
     def __init__(self, secret: AnyStr, filter_size: int, bits_per_feature: Union[int, Sequence[int]],
                  ngram_size: Union[int, Sequence[int]], diffusion=False, eld_length = None,
@@ -184,8 +192,8 @@ class BFEncoder(Encoder):
 
         return enc_data
 
-    def encode_and_compare_and_append(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
-                           metric: str, sim: bool = True, store_encs: bool = False) -> Tuple[np.ndarray, Sequence[Sequence[str]]]:
+    def encode_and_compare(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
+                           metric: str, sim: bool = True, store_encs: bool = False) -> np.ndarray:
         """
         Encodes the given data using bloom filter encoding (CLKHash), then computes and returns the pairwise
         similarities/distances of the bloom filters as a list of tuples.
@@ -196,30 +204,22 @@ class BFEncoder(Encoder):
         :return: The similarities/distances as a list of tuples: [(i,j,val),...], where i and j are the indices of
         the records in data and val is the computed similarity/distance.
         """
-        available_metrics = ["dice", "jaccard"]
+        available_metrics = ["dice", "jaccard", "heng"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
         #print("DEB: Encoding")
-        data_joined = [["".join(d).lower()] for d in data]
-        enc = self.encode(data_joined)
-        enc_as_int = enc.astype(int)
-        enc_as_string = [''.join(map(str, bits)) for bits in enc_as_int]
-        combined_data = np.column_stack((data, enc_as_string, uids))
+        data = [["".join(d).lower()] for d in data]
+        enc = self.encode(data)
 
         if store_encs:
             cache = dict(zip(uids, enc))
-            with open("./graphMatching/data/encodings/encoding_dict.pck", "wb") as f:
+            with open("./data/encodings/encoding_dict.pck", "wb") as f:
                 pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
 
-        uids = np.array(uids)
-        # Compute all possible unique combinations of indices and split them to as many sub-lists as workers
-        ind_combinations = np.array_split(numpy_pairwise_combinations(np.arange(enc.shape[0])), self.workers)
+        uids = np.array(uids).astype(np.float64)
 
-        parallel = Parallel(n_jobs=self.workers)
-        output_generator = parallel(
-            delayed(calc_metrics)(uids, enc, metric, sim, inds) for inds in ind_combinations)
-
-        return np.vstack(output_generator), combined_data
+        pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
+        return enc, pw_dice
 
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 
