@@ -2,7 +2,7 @@
 import gc
 import os
 import pickle
-from typing import Sequence, AnyStr, List, Tuple, Any
+from typing import Sequence, AnyStr, List, Tuple, Any, Union
 import numpy as np
 import hashlib
 import math
@@ -222,13 +222,16 @@ class BFEncoder():
         return enc, pw_dice
 
     def encode_and_compare_and_append(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
-                           metric: str, sim: bool = True, store_encs: bool = False) -> np.ndarray:
+                           metric: str, sim: bool = True, store_encs: bool = False) -> Tuple[np.ndarray, Sequence[Sequence[str]]]:
         available_metrics = ["dice", "jaccard", "heng"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
         #print("DEB: Encoding")
-        data = [["".join(d).lower()] for d in data]
-        enc = self.encode(data)
+        data_joined = [["".join(d).lower()] for d in data]
+        enc = self.encode(data_joined)
+        enc_as_int = enc.astype(int)
+        enc_as_string = [''.join(map(str, bits)) for bits in enc_as_int]
+        combined_data = np.column_stack((data, enc_as_string, uids))
 
         if store_encs:
             cache = dict(zip(uids, enc))
@@ -238,7 +241,7 @@ class BFEncoder():
         uids = np.array(uids).astype(np.float64)
 
         pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
-        return enc, pw_dice
+        return pw_dice, combined_data
 
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 
