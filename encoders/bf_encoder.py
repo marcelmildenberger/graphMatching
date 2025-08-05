@@ -219,7 +219,7 @@ class BFEncoder():
         uids = np.array(uids).astype(np.float64)
 
         pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
-        return enc, pw_dice
+        return pw_dice
 
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 
