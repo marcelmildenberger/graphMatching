@@ -17,10 +17,10 @@ from graphMatching.encoders.non_encoder import NonEncoder
 from graphMatching.matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
 
 from graphMatching.matchers.spatial import NNMatcher
-from utils import *
+from utils.utils import *
 
 
-def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, DEA_CONFIG, eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash):
+def run_gma(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG, eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash):
 
 
     # Sanity Check: Ensure that valid options were specified by the user
