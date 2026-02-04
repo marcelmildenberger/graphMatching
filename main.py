@@ -10,19 +10,20 @@ import numpy as np
 
 from hashlib import md5
 
-from aligners.closed_form_procrustes import ProcrustesAligner
-from aligners.wasserstein_procrustes import WassersteinAligner
-from embedders.node2vec import N2VEmbedder
-from embedders.netmf import NetMFEmbedder
-from encoders.bf_encoder import BFEncoder
-from encoders.tmh_encoder import TMHEncoder
-from encoders.tsh_encoder import TSHEncoder
-from encoders.non_encoder import NonEncoder
-from encoders.pst_encoder import PSTEncoder
-from matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
+from graphMatching.aligners.closed_form_procrustes import ProcrustesAligner
+from graphMatching.aligners.wasserstein_procrustes import WassersteinAligner
+from graphMatching.embedders.node2vec import N2VEmbedder
+from graphMatching.embedders.netmf import NetMFEmbedder
+from graphMatching.encoders.bf_encoder import BFEncoder
+from graphMatching.encoders.tmh_encoder import TMHEncoder
+from graphMatching.encoders.tsh_encoder import TSHEncoder
+from graphMatching.encoders.rbes_encoder import BigramRecordEncoder
+from graphMatching.encoders.non_encoder import NonEncoder
+from graphMatching.encoders.pst_encoder import PSTEncoder
+from graphMatching.matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
 
-from matchers.spatial import NNMatcher
-from utils import *
+from graphMatching.matchers.spatial import NNMatcher
+from graphMatching.utils import *
 
 
 def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
@@ -43,7 +44,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                "DropFrom"] in supported_drops, "Error: Data must be dropped from one of %s" % (
         (supported_drops))
 
-    supported_encs = ["BloomFilter", "TabMinHash", "TwoStepHash", "PST", "Heng", "None", None]
+    supported_encs = ["RoundBasedEncoder", "BloomFilter", "TabMinHash", "TwoStepHash", "PST", "Heng", "None", None]
     assert (ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs), "Error: Encoding " \
                                     "method must be one of %s" % ((supported_encs))
 
@@ -100,13 +101,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     # Check if Alice's data has been encoded before. If yes, load stored data.
     alice_skip_thresholding = False
 
-    if os.path.isfile("./data/encoded/alice-%s.h5" % alice_enc_hash):
+    if os.path.isfile("./graphMatching/data/encoded/alice-%s.h5" % alice_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's encoded records")
 
         # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
         # floats to save memory.
-        alice_enc = hkl.load("./data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
+        alice_enc = hkl.load("./graphMatching/data/encoded/alice-%s.h5" % alice_enc_hash).astype(np.float32)
         # First row contains the number of records initially present in Alice's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
         # Extract the value and omit first row.
@@ -115,7 +116,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # If records were dropped from both datasets, we load the number of overlapping records. This is required
         # to correctly compute the success rate later on
         if GLOBAL_CONFIG["DropFrom"] == "Both":
-            with open("./data/encoded/overlap-%s.pck" % alice_enc_hash, "rb") as f:
+            with open("./graphMatching/data/encoded/overlap-%s.pck" % alice_enc_hash, "rb") as f:
                 overlap_count = pickle.load(f)
 
         # Set duration of encoding to -1 to indicate that stored records were used (Only relevant when benchmarking)
@@ -132,7 +133,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if GLOBAL_CONFIG["DropFrom"] == "Both":
             # Compute the maximum number of overlapping records possible for the given dataset size and overlap
             overlap_count = int(-(GLOBAL_CONFIG["Overlap"] * len(alice_data) / (GLOBAL_CONFIG["Overlap"] - 2)))
-            with open("./data/encoded/overlap-%s.pck" % alice_enc_hash, "wb") as f:
+            with open("./graphMatching/data/encoded/overlap-%s.pck" % alice_enc_hash, "wb") as f:
                 pickle.dump(overlap_count, f, protocol=5)
             # Randomly select the overlapping records from the set of available records (all records in the data)
             available = list(range(len(alice_data)))
@@ -187,6 +188,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_encoder = PSTEncoder(ENC_CONFIG["AlicePSTK"], ENC_CONFIG["AlicePSTL"], ENC_CONFIG["AlicePSTP"],
                                        charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
+        elif ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
+            alice_encoder = BigramRecordEncoder(key=ENC_CONFIG["AliceSecret"],
+                                       num_rounds=2, t=4)
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
@@ -223,7 +227,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Uses HDF Format for increased performance.
         # TODO: np.vstack tends to be slow for large arrays. Maybe replace with something faster/save in own file
         hkl.dump(np.vstack([np.array([-1, -1, n_alice]).astype(np.float32), alice_enc]),
-                 "./data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
+                 "./graphMatching/data/encoded/alice-%s.h5" % alice_enc_hash, mode='w')
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Alice")
@@ -246,13 +250,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     # Check if Eve's data has been encoded before. If yes, load stored data.
     eve_skip_thresholding = False
 
-    if os.path.isfile("./data/encoded/eve-%s.h5" % eve_enc_hash):
+    if os.path.isfile("./graphMatching/data/encoded/eve-%s.h5" % eve_enc_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's encoded records")
 
         # Loads the pairwise similarities of the encoded records from disk. Similarities are stored as single-precision
         # floats to save memory.
-        eve_enc = hkl.load("./data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
+        eve_enc = hkl.load("./graphMatching/data/encoded/eve-%s.h5" % eve_enc_hash).astype(np.float32)
         # First row contains the number of records initially present in Eve's dataset. This is explicitly stored to
         # avoid re-calculating it from the pairwise similarities.
         # Extract the value and omit first row.
@@ -348,7 +352,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Uses HDF Format for increased performance.
         # TODO: np.vstack tends to be slow for large arrays. Maybe replace with something faster/save in own file
         hkl.dump(np.vstack([np.array([-1, -1, n_eve]).astype(np.float32), eve_enc]),
-                 "./data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
+                 "./graphMatching/data/encoded/eve-%s.h5" % eve_enc_hash, mode='w')
 
     if GLOBAL_CONFIG["Verbose"]:
         print("Computing Thresholds and subsetting data for Eve")
@@ -379,15 +383,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         start_alice_emb = time.time()
 
     # Check if data has been embedded before. If yes, load stored embeddings from disk.
-    if os.path.isfile("./data/embeddings/alice-%s.h5" % alice_emb_hash):
+    if os.path.isfile("./graphMatching/data/embeddings/alice-%s.h5" % alice_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Alice's embeddings")
 
         # If embeddings are present, load them
-        alice_embeddings = hkl.load("./data/embeddings/alice-%s.h5" % alice_emb_hash).astype(np.float32)
+        alice_embeddings = hkl.load("./graphMatching/data/embeddings/alice-%s.h5" % alice_emb_hash).astype(np.float32)
 
         # Loads the UIDs of the embeddings
-        with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "rb") as f:
+        with open("./graphMatching/data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "rb") as f:
             alice_uids = pickle.load(f)
 
         # Set embedding duration to -1 to inidicate that pre-computed embeddings were used.
@@ -407,7 +411,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         if EMB_CONFIG["Algo"] == "Node2Vec":
             # PecanPy expects an edgelist on disk: Save similarities to edgelist format
             # TODO: Check if we can somehow pass the data directly to PecanPy
-            np.savetxt("data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("./graphMatching/data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             alice_embedder = N2VEmbedder(walk_length=EMB_CONFIG["AliceWalkLen"], n_walks=EMB_CONFIG["AliceNWalks"],
                                          p=EMB_CONFIG["AliceP"], q=EMB_CONFIG["AliceQ"],
@@ -415,7 +419,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                          context_size=EMB_CONFIG["AliceContext"], epochs=EMB_CONFIG["AliceEpochs"],
                                          seed=EMB_CONFIG["AliceSeed"], workers=GLOBAL_CONFIG["Workers"],
                                          verbose=GLOBAL_CONFIG["Verbose"])
-            alice_embedder.train("./data/edgelists/alice.edg")
+            alice_embedder.train("././graphMatching/data/edgelists/alice.edg")
         #elif EMB_CONFIG["Explicit"] == "Node2Vec":
         else:
             alice_embedder = NetMFEmbedder(EMB_CONFIG["AliceDim"], EMB_CONFIG["AliceContext"],
@@ -443,8 +447,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         del alice_embedder
 
         # Save Embeddings and UIDs to disk (rows in embedding matrix are ordered according to the uids)
-        hkl.dump(alice_embeddings, "./data/embeddings/alice-%s.h5" % alice_emb_hash, mode='w')
-        with open("./data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "wb") as f:
+        hkl.dump(alice_embeddings, "./graphMatching/data/embeddings/alice-%s.h5" % alice_emb_hash, mode='w')
+        with open("./graphMatching/data/embeddings/alice_uids-%s.pck" % alice_emb_hash, "wb") as f:
             pickle.dump(alice_uids, f, protocol=5)
 
     # Create a dictionary that maps UIDs to their respective row index (Only used if alignment using ground truth is
@@ -452,15 +456,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     alice_indexdict = dict(zip(alice_uids, range(len(alice_uids))))
 
     # Check if Eve's data has been embedded before. If yes, load stored embeddings from disk.
-    if os.path.isfile("./data/embeddings/eve-%s.h5" % eve_emb_hash):
+    if os.path.isfile("./graphMatching/data/embeddings/eve-%s.h5" % eve_emb_hash):
         if GLOBAL_CONFIG["Verbose"]:
             print("Found stored data for Eve's embeddings")
 
         # If embeddings are present, load them. Single precision floats to save memory.
-        eve_embeddings = hkl.load("./data/embeddings/eve-%s.h5" % eve_emb_hash).astype(np.float32)
+        eve_embeddings = hkl.load("./graphMatching/data/embeddings/eve-%s.h5" % eve_emb_hash).astype(np.float32)
 
         # Loads the UIDs of the embeddings
-        with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "rb") as f:
+        with open("./graphMatching/data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "rb") as f:
             eve_uids = pickle.load(f)
 
         # Set embedding duration to -1 to inidicate that pre-computed embeddings were used.
@@ -485,14 +489,14 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             # PecanPy expects an edgelist on disk: Save similarities to edgelist format
             # TODO: Check if we can somehow pass the data directly to PecanPy
 
-            np.savetxt("data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("./graphMatching/data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
             eve_embedder = N2VEmbedder(walk_length=EMB_CONFIG["EveWalkLen"], n_walks=EMB_CONFIG["EveNWalks"],
                                        p=EMB_CONFIG["EveP"], q=EMB_CONFIG["EveQ"], dim_embeddings=EMB_CONFIG["EveDim"],
                                        context_size=EMB_CONFIG["EveContext"], epochs=EMB_CONFIG["EveEpochs"],
                                        seed=EMB_CONFIG["EveSeed"], workers=GLOBAL_CONFIG["Workers"],
                                        verbose=GLOBAL_CONFIG["Verbose"])
-            eve_embedder.train("./data/edgelists/eve.edg")
+            eve_embedder.train("././graphMatching/data/edgelists/eve.edg")
         else:
             eve_embedder = NetMFEmbedder(EMB_CONFIG["EveDim"], EMB_CONFIG["EveContext"],
                                          EMB_CONFIG["EveNegative"],
@@ -517,8 +521,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         del eve_embedder
 
         # Save Embeddings and UIDs to disk (rows in embedding matrix are ordered according to the uids)
-        hkl.dump(eve_embeddings, "./data/embeddings/eve-%s.h5" % eve_emb_hash, mode='w')
-        with open("./data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "wb") as f:
+        hkl.dump(eve_embeddings, "./graphMatching/data/embeddings/eve-%s.h5" % eve_emb_hash, mode='w')
+        with open("./graphMatching/data/embeddings/eve_uids-%s.pck" % eve_emb_hash, "wb") as f:
             pickle.dump(eve_uids, f, protocol=5)
 
     # Create a dictionary that maps UIDs to their respective row index (Only used if alignment using ground truth is
