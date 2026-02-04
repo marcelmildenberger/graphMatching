@@ -97,8 +97,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, BLOCKING_CONFIG):
     alice_enc = alice_enc[(alice_enc[:, 2] > EMB_CONFIG["MinSim"]), :]
     eve_enc = eve_enc[(eve_enc[:, 2] > EMB_CONFIG["MinSim"]), :]
 
-    np.savetxt("./data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
-    np.savetxt("./data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+    np.savetxt("././graphMatching/data/edgelists/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+    np.savetxt("././graphMatching/data/edgelists/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
     alice_embedder = ExplicitEmbedder(alice_enc, alice_uids,
                                       min_component_size=EMB_CONFIG["MinComponentSize"],
@@ -107,8 +107,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, BLOCKING_CONFIG):
     eve_embedder = ExplicitEmbedder(eve_enc, eve_uids,
                                     min_component_size=EMB_CONFIG["MinComponentSize"], verbose=GLOBAL_CONFIG["Verbose"])
 
-    alice_embedder.train("./data/edgelists/alice.edg")
-    eve_embedder.train("./data/edgelists/eve.edg")
+    alice_embedder.train("././graphMatching/data/edgelists/alice.edg")
+    eve_embedder.train("././graphMatching/data/edgelists/eve.edg")
 
     hist_features = max(alice_embedder.max_log_degree, eve_embedder.max_log_degree)
 

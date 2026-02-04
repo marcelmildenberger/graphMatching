@@ -192,7 +192,7 @@ class TSHEncoder(Encoder):
 
             for key, val in cache.items():
                 tmpdict[str(int(key))] = val
-            with open("./data/encodings/encoding_dict.pck", "wb") as f:
+            with open("./graphMatching/data/encodings/encoding_dict.pck", "wb") as f:
                 pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
 
             del tmpdict

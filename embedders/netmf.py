@@ -4,8 +4,18 @@ import random
 
 import numpy as np
 from scipy import sparse
-from sparse_dot_mkl import dot_product_mkl
 import aesara
+import platform
+if platform.system() == "Darwin":
+    # macOS
+    dot_product = np.dot
+    print("Using NumPy dot (Mac)")
+else:
+    # Linux / Windows with MKL
+    from sparse_dot_mkl import dot_product_mkl
+    dot_product = dot_product_mkl
+    print("Using MKL dot product (Non-Mac)")
+    
 from aesara import tensor as T
 import networkx as nx
 from typing import List, Union, Tuple

@@ -29,8 +29,8 @@ ___
 | MatchingMetric | Similarity metric to be computed on aligned embeddings during bipartite graph matching. Must be available in [scikit learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html). | "cosine"                  | Chapter 4.3 |
 | Matching       | Matching algorithm for bipartite graph matching. Must be "MinWeight", "Stable", "Symmetric" or "NearestNeighbor".                                                                                                       | "MinWeight"               | Chapter 4.3 |
 | Workers        | Number of cores used in multiprocessing. If >= 1 defines the number of cores. If -1, all available cores are used. If < -1, all available cores except (value-1) ones are used.                                         | -1                        |             |
-| StoreAliceEncs | Stores a pickled dictionary containing UIDs as keys and encodings as values in ``./data/encoded/`` for Alice's (victim) dataset.                                                                                        | False                     |             |
-| StoreEveEncs   | Stores a pickled dictionary containing UIDs as keys and encodings as values in ``./data/encoded/`` for Eve's (attacker) dataset.                                                                                        | False                     |             |
+| StoreAliceEncs | Stores a pickled dictionary containing UIDs as keys and encodings as values in ``./graphMatching/data/encoded/`` for Alice's (victim) dataset.                                                                                        | False                     |             |
+| StoreEveEncs   | Stores a pickled dictionary containing UIDs as keys and encodings as values in ``./graphMatching/data/encoded/`` for Eve's (attacker) dataset.                                                                                        | False                     |             |
 
 ___
 ## Encoding Configuration
