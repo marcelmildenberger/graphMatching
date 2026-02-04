@@ -701,10 +701,10 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                  elapsed_alice_emb, elapsed_eve_emb, elapsed_align_prep, elapsed_align, elapsed_mapping,
                  elapsed_relevant]
 
-        if not os.path.isfile("data/benchmark.tsv"):
-            save_tsv([keys], "data/benchmark.tsv")
+        if not os.path.isfile("./graphMatching/data/benchmark.tsv"):
+            save_tsv([keys], "./graphMatching/data/benchmark.tsv")
 
-        save_tsv([vals], "data/benchmark.tsv", mode="a")
+        save_tsv([vals], "./graphMatching/data/benchmark.tsv", mode="a")
 
     return mapping
 
