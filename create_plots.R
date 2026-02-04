@@ -3,7 +3,7 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 
-bench_result <- read.csv("./data/benchmark.tsv", sep="\t")
+bench_result <- read.csv("././graphMatching/data/benchmark.tsv", sep="\t")
 
 for (drp in c("Alice","Both")){
 

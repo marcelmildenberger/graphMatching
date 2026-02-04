@@ -96,7 +96,7 @@ Success rate: 0.999800
 This will tell you how many plaintext records were correctly matched to their
 encoded counterparts.
 If you set the ``BenchMode`` parameter to true, a row with the following, more detailed
-information will be added to `./data/benchmark.tsv`.
+information will be added to `././graphMatching/data/benchmark.tsv`.
 
 | Value              | Description                                                                                                                           |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------|
