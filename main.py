@@ -218,7 +218,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
         if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("dev/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("./graphMatching/dev/alice.edg", alice_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Alice's data")
@@ -343,7 +343,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Optionally export the pairwise similarities of the encodings as a human-readable edgelist (Tab separated)
         if GLOBAL_CONFIG["DevMode"]:
-            np.savetxt("dev/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
+            np.savetxt("./graphMatching/dev/eve.edg", eve_enc, delimiter="\t", fmt=["%1.0f", "%1.0f", "%1.16f"])
 
         if GLOBAL_CONFIG["Verbose"]:
             print("Done encoding Eve's data")
