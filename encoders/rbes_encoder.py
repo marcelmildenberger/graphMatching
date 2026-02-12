@@ -68,8 +68,9 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         t: int = 2,
         num_rounds: int = 1,
         rng_bits: int = 32,
+        sbox_bits: int = 4,
     ):
-        super().__init__(key, t, num_rounds, rng_bits)
+        super().__init__(key, t, sbox_bits, num_rounds, rng_bits)
         self.workers = os.cpu_count() or 1
         
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
