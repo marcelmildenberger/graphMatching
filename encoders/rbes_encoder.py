@@ -65,17 +65,28 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
     def __init__(
         self,
         key: Union[str, int],
-        avg_record_bigrams: float,
         t: int | None = None,
         sbox_bits: int = 4,
         num_rounds: int = 1,
+        round_structure: str = "LS",
         rng_bits: int = 32,
-        target_hw_fraction: float = 0.5,
-        t_max_cap: int = 512,
-        t_end: int = 2,
         xor_whitening: bool = False,
+        deactivate_diffusion: bool = False,
+        deactivate_sbox: bool = False,
+        permute_between_layers: bool = False,
     ):
-        super().__init__(key=key, avg_record_bigrams=avg_record_bigrams, t=t, sbox_bits=sbox_bits, num_rounds=num_rounds, rng_bits=rng_bits, target_hw_fraction=target_hw_fraction, t_max_cap=t_max_cap, t_end=t_end, xor_whitening=xor_whitening)
+        super().__init__(
+            key=key,
+            t=t,
+            sbox_bits=sbox_bits,
+            num_rounds=num_rounds,
+            round_structure=round_structure,
+            rng_bits=rng_bits,
+            xor_whitening=xor_whitening,
+            deactivate_diffusion=deactivate_diffusion,
+            deactivate_sbox=deactivate_sbox,
+            permute_between_layers=permute_between_layers,
+        )
         self.workers = os.cpu_count() or 1
         
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):

@@ -189,7 +189,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
-            alice_encoder = BigramRecordEncoder(key=5, avg_record_bigrams=20, t = None, sbox_bits=3, num_rounds=1, target_hw_fraction=0.4, xor_whitening=False)
+            alice_encoder = BigramRecordEncoder(key=ENC_CONFIG["key"], t=ENC_CONFIG["t"], sbox_bits=ENC_CONFIG["sbox_bits"], num_rounds=ENC_CONFIG["num_rounds"], round_structure=ENC_CONFIG["round_structure"], permute_between_layers=ENC_CONFIG["permute_between_layers"])
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
