@@ -1,5 +1,6 @@
 import os
 import string
+import csv
 
 import hickle as hkl
 import pickle
@@ -98,6 +99,38 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     #    ENCODING/SIMILARITY GRAPH GENERATION    #
     ##############################################
 
+    # Optional: load pre-encoded vectors (produced by encode_tsv) to avoid re-encoding
+    preencoded_path = GLOBAL_CONFIG.get("PreencodedTsv")
+    preencoded_vectors = None
+    if preencoded_path and os.path.isfile(preencoded_path):
+        tmp = {}
+        with open(preencoded_path, newline="") as f:
+            reader = csv.reader(f, delimiter="\t")
+            header = next(reader, None)
+            # Assume encoded_vector is penultimate column, uid last column
+            for row in reader:
+                if len(row) < 2:
+                    continue
+                uid = row[-1]
+                bitstr = row[-2]
+                vec = np.fromiter((c == "1" for c in bitstr), dtype=np.uint8, count=len(bitstr))
+                tmp[uid] = vec
+        preencoded_vectors = tmp
+
+    def lookup_preencoded(uids):
+        if preencoded_vectors is None:
+            return None
+        vecs = []
+        for u in uids:
+            v = preencoded_vectors.get(str(u))
+            if v is None:
+                return None
+            vecs.append(v)
+        try:
+            return np.stack(vecs).astype(np.uint8)
+        except Exception:
+            return None
+
     # Check if Alice's data has been encoded before. If yes, load stored data.
     alice_skip_thresholding = False
 
@@ -189,7 +222,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
-            alice_encoder = BigramRecordEncoder(key=ENC_CONFIG["key"], t=ENC_CONFIG["t"], sbox_bits=ENC_CONFIG["sbox_bits"], num_rounds=ENC_CONFIG["num_rounds"], round_structure=ENC_CONFIG["round_structure"], permute_between_layers=ENC_CONFIG["permute_between_layers"])
+            alice_encoder = BigramRecordEncoder(key=ENC_CONFIG["key"], t=ENC_CONFIG["t"], sbox_bits=ENC_CONFIG["sbox_bits"], num_rounds=ENC_CONFIG["num_rounds"], round_structure=ENC_CONFIG["round_structure"])
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
@@ -198,8 +231,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
-        alice_enc = alice_encoder.encode_and_compare(alice_data, alice_uids, metric=ENC_CONFIG["AliceMetric"], sim=True,
-                                                        store_encs=GLOBAL_CONFIG["SaveAliceEncs"])
+        pre_alice = lookup_preencoded(alice_uids)
+        alice_enc = alice_encoder.encode_and_compare(
+            alice_data,
+            alice_uids,
+            metric=ENC_CONFIG["AliceMetric"],
+            sim=True,
+            store_encs=GLOBAL_CONFIG["SaveAliceEncs"],
+            precomputed_encs=pre_alice,
+        )
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
@@ -323,8 +363,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
 
-        eve_enc = eve_encoder.encode_and_compare(eve_data, eve_uids, metric=ENC_CONFIG["EveMetric"], sim=True,
-                                                 store_encs=GLOBAL_CONFIG["SaveEveEncs"])
+        pre_eve = lookup_preencoded(eve_uids)
+        eve_enc = eve_encoder.encode_and_compare(
+            eve_data,
+            eve_uids,
+            metric=ENC_CONFIG["EveMetric"],
+            sim=True,
+            store_encs=GLOBAL_CONFIG["SaveEveEncs"],
+            precomputed_encs=pre_eve,
+        )
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
         # (Probability of visiting a node would always be zero.)
@@ -705,7 +752,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
 
         save_tsv([vals], "./graphMatching/data/benchmark.tsv", mode="a")
 
-    return mapping
+    return success_rate
 
 
 if __name__ == "__main__":

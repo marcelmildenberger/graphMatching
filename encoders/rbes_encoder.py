@@ -68,12 +68,9 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         t: int | None = None,
         sbox_bits: int = 4,
         num_rounds: int = 1,
-        round_structure: str = "LS",
+        round_structure: str = "DS",
         rng_bits: int = 32,
         xor_whitening: bool = False,
-        deactivate_diffusion: bool = False,
-        deactivate_sbox: bool = False,
-        permute_between_layers: bool = False,
     ):
         super().__init__(
             key=key,
@@ -83,13 +80,10 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
             round_structure=round_structure,
             rng_bits=rng_bits,
             xor_whitening=xor_whitening,
-            deactivate_diffusion=deactivate_diffusion,
-            deactivate_sbox=deactivate_sbox,
-            permute_between_layers=permute_between_layers,
         )
         self.workers = os.cpu_count() or 1
         
-    def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
+    def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False, precomputed_encs=None):
         # Supported metrics. (We intentionally drop Jaccard here.)
         available_metrics = ["dice", "hamming_distance", "hamming_similarity"]
         assert metric in available_metrics, "Invalid metric. Must be one of " + str(available_metrics)
@@ -97,15 +91,21 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         numex = len(uids)
         uids = np.array(uids, dtype=np.float32)
 
-        normalized = []
-        for record in data:
-            if isinstance(record, str):
-                normalized.append(record)
-            else:
-                normalized.append("".join(map(str, record)))
+        if precomputed_encs is not None:
+            encs = np.asarray(precomputed_encs, dtype=np.uint8)
+            if encs.shape[0] != numex or encs.shape[1] != self.num_bits:
+                raise ValueError("precomputed_encs has shape "
+                                 f"{encs.shape}, expected ({numex}, {self.num_bits})")
+        else:
+            normalized = []
+            for record in data:
+                if isinstance(record, str):
+                    normalized.append(record)
+                else:
+                    normalized.append("".join(map(str, record)))
 
-        enc_list = [self.encode(rec) for rec in normalized]
-        encs = np.stack(enc_list).astype(np.uint8)
+            enc_list = [self.encode(rec) for rec in normalized]
+            encs = np.stack(enc_list).astype(np.uint8)
 
         if store_encs:
             os.makedirs("./graphMatching/data/encodings", exist_ok=True)
