@@ -94,8 +94,15 @@ class WassersteinAligner(Aligner):
                 G = - torch.matmul(xt.T, torch.matmul(P, yt))
                 R -= self.lr / self.batchsize * G
                 # project on orthogonal matrices
-                U, s, VT = torch.linalg.svd(R)
-                R = torch.matmul(U, VT)
+                try:
+                    U, s, VT = torch.linalg.svd(R)
+                    R = torch.matmul(U, VT)
+                except Exception as e:
+                    # Torch SVD can fail on ill-conditioned matrices; fall back to identity reset
+                    if self.verbose:
+                        print(f"SVD failed in solve_procrustes (resetting R): {e}")
+                    R = torch.eye(R.shape[0], device=R.device, dtype=R.dtype)
+                    continue
                 if first_obj == -1:
                     obj = 0
                     for i in range(5):

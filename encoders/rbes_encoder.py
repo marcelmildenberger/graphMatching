@@ -89,27 +89,29 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         assert metric in available_metrics, "Invalid metric. Must be one of " + str(available_metrics)
 
         numex = len(uids)
-        uids = np.array(uids, dtype=np.float32)
+        uids = np.array(uids, dtype=np.float64)  # keep full precision for IDs
 
         if precomputed_encs is not None:
             encs = np.asarray(precomputed_encs, dtype=np.uint8)
             if encs.shape[0] != numex or encs.shape[1] != self.num_bits:
                 raise ValueError("precomputed_encs has shape "
                                  f"{encs.shape}, expected ({numex}, {self.num_bits})")
+            enc_list = None
         else:
+            # Normalize like other encoders: lowercase, concatenate fields
             normalized = []
             for record in data:
                 if isinstance(record, str):
-                    normalized.append(record)
+                    normalized.append(record.lower())
                 else:
-                    normalized.append("".join(map(str, record)))
+                    normalized.append("".join(map(str, record)).lower())
 
             enc_list = [self.encode(rec) for rec in normalized]
             encs = np.stack(enc_list).astype(np.uint8)
 
         if store_encs:
             os.makedirs("./graphMatching/data/encodings", exist_ok=True)
-            tmpdict = {str(int(uid)): encs[i] for i, uid in enumerate(uids)}
+            tmpdict = {str(uid): encs[i] for i, uid in enumerate(uids)}
             with open("./graphMatching/data/encodings/encoding_dict.pck", "wb") as f:
                 pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
             del tmpdict
@@ -132,7 +134,10 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
             re[start:end, 0:2] = ind
             start = end
 
-        del inds_split, inds, pw_metrics, enc_list, encs
+        # Cleanup large intermediates
+        del inds_split, inds, pw_metrics, encs
+        if enc_list is not None:
+            del enc_list
         gc.collect()
-        print(re)
+
         return re

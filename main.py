@@ -222,7 +222,15 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
-            alice_encoder = BigramRecordEncoder(key=ENC_CONFIG["key"], t=ENC_CONFIG["t"], sbox_bits=ENC_CONFIG["sbox_bits"], num_rounds=ENC_CONFIG["num_rounds"], round_structure=ENC_CONFIG["round_structure"])
+            alice_key = ENC_CONFIG.get("AliceSecret", 5)
+            alice_encoder = BigramRecordEncoder(
+                key=alice_key,
+                t=ENC_CONFIG["t"],
+                sbox_bits=ENC_CONFIG["sbox_bits"],
+                num_rounds=ENC_CONFIG["num_rounds"],
+                round_structure=ENC_CONFIG["round_structure"],
+                xor_whitening=ENC_CONFIG.get("xor_whitening", False),
+            )
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
 
@@ -238,7 +246,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             metric=ENC_CONFIG["AliceMetric"],
             sim=True,
             store_encs=GLOBAL_CONFIG["SaveAliceEncs"],
-            precomputed_encs=pre_alice,
+            precomputed_encs=None,
         )
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
@@ -350,10 +358,20 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_encoder = TSHEncoder(ENC_CONFIG["EveNHashFunc"], ENC_CONFIG["EveNHashCol"], ENC_CONFIG["EveN"],
                                     ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
                                     verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
-        elif ENC_CONFIG["AliceAlgo"] in ["PST", "Heng"]:
+        elif ENC_CONFIG["EveAlgo"] in ["PST", "Heng"]:
             eve_encoder = PSTEncoder(ENC_CONFIG["EvePSTK"], ENC_CONFIG["EvePSTL"], ENC_CONFIG["EvePSTP"],
                                        charset=ENC_CONFIG["EveCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
+        elif ENC_CONFIG["EveAlgo"] == "RoundBasedEncoder":
+            eve_key = ENC_CONFIG.get("EveSecret", 10)
+            eve_encoder = BigramRecordEncoder(
+                key=eve_key,
+                t=ENC_CONFIG["t"],
+                sbox_bits=ENC_CONFIG["sbox_bits"],
+                num_rounds=ENC_CONFIG["num_rounds"],
+                round_structure=ENC_CONFIG["round_structure"],
+                xor_whitening=ENC_CONFIG.get("xor_whitening", False),
+            )
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
 
@@ -370,7 +388,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             metric=ENC_CONFIG["EveMetric"],
             sim=True,
             store_encs=GLOBAL_CONFIG["SaveEveEncs"],
-            precomputed_encs=pre_eve,
         )
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
