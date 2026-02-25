@@ -230,6 +230,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                 num_rounds=ENC_CONFIG["num_rounds"],
                 round_structure=ENC_CONFIG["round_structure"],
                 xor_whitening=ENC_CONFIG.get("xor_whitening", False),
+                xor_target_weight=ENC_CONFIG.get("xor_target_weight"),
             )
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
@@ -371,6 +372,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                 num_rounds=ENC_CONFIG["num_rounds"],
                 round_structure=ENC_CONFIG["round_structure"],
                 xor_whitening=ENC_CONFIG.get("xor_whitening", False),
+                xor_target_weight=ENC_CONFIG.get("xor_target_weight"),
             )
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
@@ -795,6 +797,8 @@ if __name__ == "__main__":
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
+        "xor_whitening": False,
+        "xor_target_weight": None,
         "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,

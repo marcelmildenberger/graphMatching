@@ -71,6 +71,7 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         round_structure: str = "DS",
         rng_bits: int = 32,
         xor_whitening: bool = False,
+        xor_target_weight: int | None = None,
     ):
         super().__init__(
             key=key,
@@ -80,6 +81,7 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
             round_structure=round_structure,
             rng_bits=rng_bits,
             xor_whitening=xor_whitening,
+            xor_target_weight=xor_target_weight,
         )
         self.workers = os.cpu_count() or 1
         
