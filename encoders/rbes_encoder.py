@@ -65,19 +65,13 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
     def __init__(
         self,
         key: Union[str, int],
-        t: int | None = None,
-        sbox_bits: int = 4,
-        num_rounds: int = 1,
-        round_structure: str = "DS",
+        round_structure: str = "D1S2",
         rng_bits: int = 32,
         xor_whitening: bool = False,
         xor_target_weight: int | None = None,
     ):
         super().__init__(
             key=key,
-            t=t,
-            sbox_bits=sbox_bits,
-            num_rounds=num_rounds,
             round_structure=round_structure,
             rng_bits=rng_bits,
             xor_whitening=xor_whitening,

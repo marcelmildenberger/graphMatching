@@ -225,9 +225,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_key = ENC_CONFIG.get("AliceSecret", 5)
             alice_encoder = BigramRecordEncoder(
                 key=alice_key,
-                t=ENC_CONFIG["t"],
-                sbox_bits=ENC_CONFIG["sbox_bits"],
-                num_rounds=ENC_CONFIG["num_rounds"],
                 round_structure=ENC_CONFIG["round_structure"],
                 xor_whitening=ENC_CONFIG.get("xor_whitening", False),
                 xor_target_weight=ENC_CONFIG.get("xor_target_weight"),
@@ -367,9 +364,6 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_key = ENC_CONFIG.get("EveSecret", 10)
             eve_encoder = BigramRecordEncoder(
                 key=eve_key,
-                t=ENC_CONFIG["t"],
-                sbox_bits=ENC_CONFIG["sbox_bits"],
-                num_rounds=ENC_CONFIG["num_rounds"],
                 round_structure=ENC_CONFIG["round_structure"],
                 xor_whitening=ENC_CONFIG.get("xor_whitening", False),
                 xor_target_weight=ENC_CONFIG.get("xor_target_weight"),
