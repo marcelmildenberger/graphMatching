@@ -6,3 +6,8 @@
 /.ipynb_checkpoints/
 /.idea/
 /data/encoded/*
+*.pyc
+*.tsv
+*.edg
+*.pck
+*.h5
