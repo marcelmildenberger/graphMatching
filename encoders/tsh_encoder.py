@@ -6,7 +6,7 @@ import pickle
 import numpy as np
 from hashlib import sha256
 from joblib import Parallel, delayed
-from .encoder import Encoder
+from .encoder import Encoder, normalize_joined_record
 
 
 # =============================================================================
@@ -132,7 +132,7 @@ class TSHEncoder(Encoder):
              - hash_set  A set of hash values representing the q-gram set.
         """
 
-        concat_lower = "".join(data).replace(" ", "").lower()
+        concat_lower = normalize_joined_record(data)
         # Split each string in the data into a list of qgrams to process
         q_gram_set = [concat_lower[i:i + self.ngram_size] for i in range(len(concat_lower) - self.ngram_size + 1)]
 

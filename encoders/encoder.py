@@ -5,6 +5,26 @@ from typing import Sequence, List, Tuple
 import numpy as np
 
 
+def normalize_alphanumeric(value) -> str:
+    return "".join(ch for ch in str(value).strip().lower() if ch.isalnum())
+
+
+def normalize_joined_record(record) -> str:
+    if isinstance(record, str):
+        return normalize_alphanumeric(record)
+    return "".join(normalize_alphanumeric(value) for value in record)
+
+
+def normalize_record_values(record):
+    normalized = []
+    for value in record:
+        if isinstance(value, str):
+            normalized.append(normalize_alphanumeric(value))
+        else:
+            normalized.append(value)
+    return normalized
+
+
 class Encoder(ABC):
 
     @abstractmethod

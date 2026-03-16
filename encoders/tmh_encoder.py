@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from .encoder import Encoder
+from .encoder import Encoder, normalize_joined_record
 
 
 def est_1bit_jacc(arr_a, arr_b):
@@ -139,7 +139,7 @@ class TMHEncoder(Encoder):
 
     def encode(self, data):
         hashes = np.zeros((len(data), self.num_hash_func), dtype=bool if self.one_bit_hash else self.minhash_dtype)
-        data = ["".join(d).replace(" ", "").lower() for d in data]
+        data = [normalize_joined_record(d) for d in data]
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
         for i, qg in enumerate(data):
             hashes[i] = self.hash_qgrams(qg)
@@ -149,7 +149,7 @@ class TMHEncoder(Encoder):
         available_metrics = ["jaccard", "dice"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
         uids_as_float = [float(u) for u in uids]
-        data_joined = ["".join(d).replace(" ", "").lower() for d in data]
+        data_joined = [normalize_joined_record(d) for d in data]
         # Split each string in the data into a list of qgrams to process
         data_qgrams = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data_joined]
         parallel = Parallel(n_jobs=self.workers)
@@ -186,7 +186,7 @@ class TMHEncoder(Encoder):
     def get_encoding_dict(self, data, uids):
 
         uids = [float(u) for u in uids]
-        data = ["".join(d).replace(" ", "").lower() for d in data]
+        data = [normalize_joined_record(d) for d in data]
         # Split each string in the data into a list of qgrams to process
         data = [[b[i:i + self.ngram_size] for i in range(len(b) - self.ngram_size + 1)] for b in data]
         parallel = Parallel(n_jobs=self.workers)

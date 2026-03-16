@@ -4,7 +4,7 @@ import numpy as np
 import os
 import gc
 from joblib import Parallel, delayed
-from .encoder import Encoder
+from .encoder import Encoder, normalize_joined_record
 
 def make_inds(i_vals, numex):
     tmp1 = []
@@ -76,7 +76,7 @@ def compute_metrics(inds, cache, uids, metric, sim):
     return tmp
 
 def calc_ngram(string, n):
-    string = ["".join(string).replace(" ", "").lower()]
+    string = [normalize_joined_record(string)]
     return set([[b[i:i + n] for i in range(len(b) - n + 1)] for b in string][0])
 
 

@@ -12,6 +12,7 @@ from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
 import numba as nb
 from scipy.special import binom
+from .encoder import normalize_joined_record, normalize_record_values
 
 def pack_rows(bools: np.ndarray) -> np.ndarray:
     """
@@ -167,10 +168,12 @@ class BFEncoder():
                 "values for ngram_size. Must either be one value or one value per attribute (" + str(
                 len(data[0])) + ")."
 
+        normalized_data = [normalize_record_values(row) for row in data]
+
         # print("DEB: Schema")
-        self.__create_schema(data)
+        self.__create_schema(normalized_data)
         # print("DEB: CLKs")
-        enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
+        enc_data = clk.generate_clks(normalized_data, self.schema, self.secret)  # Returns a list of bitarrays
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
         # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
         # print("DEB: Stacking")
@@ -208,7 +211,7 @@ class BFEncoder():
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
         #print("DEB: Encoding")
-        data = [["".join(d).lower()] for d in data]
+        data = [[normalize_joined_record(d)] for d in data]
         enc = self.encode(data)
 
         if store_encs:
@@ -227,7 +230,7 @@ class BFEncoder():
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
         #print("DEB: Encoding")
-        data_joined = [["".join(d).lower()] for d in data]
+        data_joined = [[normalize_joined_record(d)] for d in data]
         enc = self.encode(data_joined)
         enc_as_int = enc.astype(int)
         enc_as_string = [''.join(map(str, bits)) for bits in enc_as_int]
@@ -246,7 +249,7 @@ class BFEncoder():
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 
         #print("DEB: Encoding")
-        data = [["".join(d).lower()] for d in data]
+        data = [[normalize_joined_record(d)] for d in data]
         enc = self.encode(data)
 
         return dict(zip(uids, enc))
