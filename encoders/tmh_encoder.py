@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from .encoder import Encoder
+from .encoder import Encoder, validate_metric
 
 
 def est_1bit_jacc(arr_a, arr_b):
@@ -84,8 +84,15 @@ class TMHEncoder(Encoder):
         self.one_bit_hash = one_bit_hash
         self.workers = os.cpu_count() if workers == -1 else workers
 
-        assert 64 % num_sub_keys == 0, "Number of subkeys must be divisor of 64."
-        assert num_hash_bits in [8, 16, 32, 64], "Number of bit per hash must be 8, 16, 34 or 64."
+        if 64 % num_sub_keys != 0:
+            raise ValueError("Number of subkeys must be divisor of 64.")
+        if num_hash_bits not in (8, 16, 32, 64):
+            raise ValueError("Number of bit per hash must be 8, 16, 32 or 64.")
+
+        if random_seed is not None:
+            if isinstance(random_seed, str):
+                random_seed = int(hashlib.md5(random_seed.encode()).hexdigest(), 16) % (2 ** 32 - 1)
+            np.random.seed(random_seed)
 
         if self.subkey_length == 16:
             self.subkey_dtype = np.uint16
@@ -105,21 +112,20 @@ class TMHEncoder(Encoder):
         else:
             self.minhash_dtype = np.uint64
 
-        self.hashtables = np.random.randint(2, size=(
-        self.num_hash_func, self.num_sub_keys, 2 ** self.subkey_length, self.num_hash_bits), dtype=bool)
-        if random_seed != None:
-            if type(random_seed) == str:
-                random_seed = int(hashlib.md5(random_seed.encode()).hexdigest(), 16) % (2 ** 32 - 1)
-            np.random.seed(random_seed)
+        self.hashtables = np.random.randint(
+            2,
+            size=(self.num_hash_func, self.num_sub_keys, 2 ** self.subkey_length, self.num_hash_bits),
+            dtype=bool,
+        )
 
     def get_min_hash(self, val):
         key = bin(int(hashlib.md5(val.encode()).hexdigest(), 16))[-64:]  # Extract 64 least significant bits
-        key = np.array([int(digit) for digit in key], dtype=bool)  # To numpy aray
+        key = np.array([int(digit) for digit in key], dtype=bool)  # Convert to a NumPy array
         subkeys = np.array_split(key, self.num_sub_keys)  # Split key into c equally sized subkeys
         indices = np.packbits(subkeys, axis=-1).view(
-            self.subkey_dtype)  # Convert subkeys into indices used for the hashtbales
+            self.subkey_dtype)  # Convert subkeys into indices used for the hash tables
 
-        minhashes = np.zeros((self.num_hash_func), dtype=self.minhash_dtype)
+        minhashes = np.zeros(self.num_hash_func, dtype=self.minhash_dtype)
         for func_ind in range(self.num_hash_func):
             tmp = np.zeros((self.num_sub_keys, self.num_hash_bits), dtype=bool)
             for key_ind, table_ind in enumerate(indices):
@@ -146,8 +152,8 @@ class TMHEncoder(Encoder):
         return hashes
 
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
-        available_metrics = ["jaccard", "dice"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        available_metrics = ("jaccard", "dice")
+        validate_metric(metric, available_metrics)
         uids = [float(u) for u in uids]
         data = ["".join(d).replace(" ", "").lower() for d in data]
         # Split each string in the data into a list of qgrams to process

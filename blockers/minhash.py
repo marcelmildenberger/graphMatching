@@ -2,24 +2,23 @@ from random import seed, randint
 import binascii
 
 
-class MinHashLSH():
+class MinHashLSH:
     """A class that implements a min-hashing locality sensitive hashing (LSH)
        approach to be used for blocking the plain-text q-grams sets in order to
        prevent a full-pair-wise comparison of all q-gram set pairs.
     """
 
     def __init__(self, lsh_band_size, lsh_num_band, random_seed=None):
-        """Initialise the parameters for min-hashing LSH including generating
-           random values for hash functions.
+        """Initialize the parameters for min-hashing LSH, including the hash functions.
 
            Input arguments:
              - lsh_band_size  The length of the min-hash bands.
              - lsh_num_band   The number of LSH bands.
-             - random_seed    If not None then initalise the random number
+             - random_seed    If not None then initialize the random number
                               generator with this seed value.
 
            Output:
-             - This method does not return anything.
+             - No return value.
 
            LSH min-hashing follows the code provided here:
             https://github.com/chrisjmccormick/MinHash/blob/master/ \
@@ -36,7 +35,7 @@ class MinHashLSH():
            page 90) is: t = (1/k)^(1/r).
         """
 
-        if (random_seed != None):
+        if random_seed is not None:
             seed(random_seed)
 
         # Calculate error probabilities for given parameter values
@@ -59,7 +58,7 @@ class MinHashLSH():
             assert 0.0 <= p_cand <= 1.0
             s_p_cand_list.append((s, p_cand))
 
-        print('Initialise LSH blocking using Min-Hash')
+        print('Initialize LSH blocking using Min-Hash')
         print('  Number of hash functions: %d' % (self.num_hash_funct))
         print('  Number of bands:          %d' % (lsh_num_band))
         print('  Size of bands:            %d' % (lsh_band_size))
@@ -99,8 +98,8 @@ class MinHashLSH():
 
     def hash_q_gram_set(self, q_gram_set):
         """Min-hash the given set of q-grams and return a list of hash signatures
-           depending upon the Min-hash parameters set during the class
-           initialisation.
+           depending on the Min-hash parameters set during class
+           initialization.
 
            Input arguments:
              - q_gram_set  The q-gram set to be hashed.
@@ -132,7 +131,7 @@ class MinHashLSH():
             # For each CRC hash value (q-gram) in the q-gram set calculate its Min-
             # hash value for all 'num_hash_funct' functions
             #
-            min_hash_val = next_prime + 1  # Initialise to value outside range
+            min_hash_val = next_prime + 1  # Initialize to a value outside the range
 
             for crc_hash_val in crc_hash_set:
                 hash_val = (coeff_a_list[h] * crc_hash_val + coeff_b_list[h]) % \

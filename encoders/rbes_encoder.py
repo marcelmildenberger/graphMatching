@@ -1,8 +1,8 @@
 import gc
 import os
 import pickle
-from typing import Dict, List, Union
-from .encoder import Encoder
+from typing import List, Union
+from .encoder import Encoder, validate_metric
 from record_encoder import BigramRecordEncoder as BaseBigramRecordEncoder
 import numpy as np
 from joblib import Parallel, delayed
@@ -81,8 +81,8 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False, precomputed_encs=None):
         # Supported metrics. (We intentionally drop Jaccard here.)
-        available_metrics = ["dice", "hamming_distance", "hamming_similarity"]
-        assert metric in available_metrics, "Invalid metric. Must be one of " + str(available_metrics)
+        available_metrics = ("dice", "hamming_distance", "hamming_similarity")
+        validate_metric(metric, available_metrics, label="metric")
 
         numex = len(uids)
         uids = np.array(uids, dtype=np.float64)  # keep full precision for IDs

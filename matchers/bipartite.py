@@ -3,19 +3,13 @@ from collections import deque
 from scipy.optimize import linear_sum_assignment
 from sklearn.metrics.pairwise import pairwise_distances
 
-from .matcher import Matcher
+from .matcher import Matcher, validate_distance_metric
 
 
 class MinWeightMatcher(Matcher):
 
     def __init__(self, metric: str = "cosine", workers: int = -1):
-        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
-                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
-                             "matching", "l1", "l2", "manhattan",
-                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
-                             "sqeuclidean", "yule"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        self.metric = metric
+        self.metric = validate_distance_metric(metric)
         self.workers = workers
 
     def match(self, alice_data, alice_uids, eve_data, eve_uids):
@@ -32,7 +26,7 @@ class MinWeightMatcher(Matcher):
 
         mapping = {}
         for larger, smaller in zip(row_ind, col_ind):
-            mapping["S_"+str(smaller_uids[smaller])] = "L_"+str(larger_uids[larger])
+            mapping["S_" + str(smaller_uids[smaller])] = "L_" + str(larger_uids[larger])
 
         return mapping
 
@@ -41,13 +35,7 @@ class GaleShapleyMatcher(Matcher):
     # Partially based on
     # https://johnlekberg.com/blog/2020-08-22-stable-matching.html
     def __init__(self, metric: str = "cosine", workers: int = -1):
-        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
-                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
-                             "matching", "l1", "l2", "manhattan",
-                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
-                             "sqeuclidean", "yule"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        self.metric = metric
+        self.metric = validate_distance_metric(metric)
         self.workers = workers
 
     def __gale_shapley(self, A, B, A_pref, B_rank):
@@ -103,20 +91,19 @@ class GaleShapleyMatcher(Matcher):
             for smaller_ind in range(len(pw_dists)):
                 tmp["S_" + str(smaller_uids[smaller_ind])] = pw_dists[smaller_ind][larger_ind]
             larger_rank["L_" + str(larger_uids[larger_ind])] = tmp
-        matching = self.__gale_shapley(A=set(smaller_nodes), B=set(larger_nodes), A_pref=smaller_pref, B_rank=larger_rank)
+        matching = self.__gale_shapley(
+            A=set(smaller_nodes),
+            B=set(larger_nodes),
+            A_pref=smaller_pref,
+            B_rank=larger_rank,
+        )
         # Swap keys and values to ensure consistency with other matchers
-        return dict((v,k) for k,v in matching.items())
+        return {v: k for k, v in matching.items()}
 
 
 class SymmetricMatcher(Matcher):
     def __init__(self, metric: str = "cosine", workers: int = -1):
-        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
-                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
-                             "matching", "l1", "l2", "manhattan",
-                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
-                             "sqeuclidean", "yule"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        self.metric = metric
+        self.metric = validate_distance_metric(metric)
         self.workers = workers
 
     def match(self, alice_data, alice_uids, eve_data, eve_uids):

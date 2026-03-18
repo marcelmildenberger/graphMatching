@@ -48,7 +48,7 @@ class NetMFEmbedder(Embedder):
         X_power = sparse.identity(n, format="csr")
         for i in range(window):
             # print "Compute matrix %d-th power" % (i + 1)
-            X_power = dot_product_mkl(X_power, X)
+            X_power = dot_product(X_power, X)
             S += X_power
         S *= vol / window / b
         D_rt_inv = sparse.diags(d_rt ** -1)
@@ -80,53 +80,30 @@ class NetMFEmbedder(Embedder):
         :return: Nothing
         """
         graph = None
-        if type(data) == str:
+        if isinstance(data, str):
             graph = nx.read_weighted_edgelist(data)
             adj = nx.adjacency_matrix(graph).todense().astype(float)
 
-        elif type(data) in [list, np.ndarray]:
+        elif isinstance(data, (list, np.ndarray)):
             graph = nx.from_pandas_edgelist(
                 pd.DataFrame(data,
                              columns=["source", "target", "weight"]).astype({'source': 'int32', 'target': 'int32'}),
                                                      edge_attr=True)
             adj = nx.adjacency_matrix(graph).todense().astype(float)
 
-        elif False: #Currently disabled
-            # Efficiently creates an adjacency matrix without networkx.
-            # Since we have an undirected graph, the adjacency matrix is symmetric along the diagonal.
-            # Thus, two edges per node-pair must be present in our edgelist. This is done by duplicating the edges while
-            # changing the source for the target, e.g. swapping columns 0 and 1.
-            # This is most efficiently done via some fancy indexing,
-            # see https://stackoverflow.com/questions/20265229/rearrange-columns-of-numpy-2d-array
-            permutation = [1, 0, 2]
-            idx = np.empty_like(permutation)
-            idx[permutation] = np.arange(len(permutation))
-            data = np.vstack([data, data[:, idx]])
-
-            # https://stackoverflow.com/a/29148205
-            shape = tuple((data.max(axis=0)[:2] + 1).astype(int))
-            adj = sparse.coo_matrix((data[:, 2], (data[:, 0], data[:, 1])), shape=shape,
-                                    dtype=data.dtype).todense()
-            uid_inds = list(set(data[:, 0]))
-            uid_inds.sort()
-            del data
-
         else:
-            raise Exception("Invalid data specified for NetMF computation")
+            raise ValueError("Invalid data specified for NetMF computation")
         self.emb_matrix = self.__netmf(adj)
-        # A dictionary mapping nodes IDs to rows in the embedding matrix
-        if graph is not None:
-            self.indexdict = dict(zip(list(graph.nodes()), range(graph.number_of_nodes())))
-        else:
-            self.indexdict = {int(uid): ind for ind, uid in enumerate(uid_inds)}
+        # A dictionary mapping node IDs to rows in the embedding matrix.
+        self.indexdict = dict(zip(list(graph.nodes()), range(graph.number_of_nodes())))
 
     def get_vectors(self, ordering: List[str] = None) -> np.ndarray:
         """
         Given an ordering (a list of node IDs), returns a numpy array storing their respective embeddings, as well as
-        the ordering itself. The ordering of the array (row indices) is equivalent to the odering of the supplied list.
+        the ordering itself. The ordering of the array (row indices) is equivalent to the ordering of the supplied list.
         If no ordering is specified, embeddings of all nodes are returned using the order of the keys of the index dict.
-        :param ordering: An ordered list of node ids to retrieve the embeddings for
-        :return: The embeddings and the ordering
+        :param ordering: An ordered list of node IDs to retrieve the embeddings for.
+        :return: The embeddings and the ordering.
         """
         if ordering is None:
             ordering = list(self.indexdict.keys())

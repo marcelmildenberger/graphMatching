@@ -6,7 +6,7 @@ import galois
 import pickle
 import string
 from tqdm import tqdm
-from .encoder import Encoder
+from .encoder import Encoder, validate_metric
 from numpy.random import Generator, PCG64
 from primality import primality
 from joblib import Parallel, delayed
@@ -210,8 +210,8 @@ class PSTEncoder(Encoder):
         return [enc for encs in enc_chunks for enc in encs]
 
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
-        available_metrics = ["heng"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        available_metrics = ("heng",)
+        validate_metric(metric, available_metrics)
         data = ngramize(data, 2)
         data = self.GF_q(self._to_onehot(data))
         uids = [float(u) for u in uids]

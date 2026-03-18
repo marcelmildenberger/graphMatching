@@ -1,17 +1,17 @@
 # Encodes a given using bloom filters for PPRL
-import gc
 import os
 import pickle
-from typing import Sequence, AnyStr, List, Tuple, Any
+from typing import AnyStr, List, Sequence, Union
 import numpy as np
 import hashlib
-import math
 from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
 import numba as nb
 from scipy.special import binom
+
+from .encoder import validate_metric
 
 def pack_rows(bools: np.ndarray) -> np.ndarray:
     """
@@ -61,13 +61,13 @@ def calc_dice_fast(enc, uids, num_combs, n_threads):
     re = np.column_stack((out_i, out_j, out_sim))
     return re
 
-class BFEncoder():
+class BFEncoder:
 
     def __init__(self, secret: AnyStr, filter_size: int, bits_per_feature: Union[int, Sequence[int]],
                  ngram_size: Union[int, Sequence[int]], diffusion=False, eld_length = None,
                  t = None, workers=-1):
         """
-        Constuctor for the BFEncoder class.
+        Constructor for the BFEncoder class.
         :param secret: Secret to be used in the HMAC
         :param filter_size: Bloom Filter Size
         :param bits_per_feature: Bits to be set per feature (=Number of Hash functions). If an integer is passed, the
@@ -95,7 +95,7 @@ class BFEncoder():
             assert t is not None, "Number of XORed bits must be specified if diffusion is enabled"
             assert self.t <= self.filter_size, "Cannot select more bits for XORing than are present in the BF!"
 
-            if type(self.secret) == str:
+            if isinstance(self.secret, str):
                 random_seed = int(hashlib.md5(self.secret.encode()).hexdigest(), 16) % (2 ** 32 - 1)
             else:
                 random_seed = self.secret
@@ -117,14 +117,29 @@ class BFEncoder():
 
                 self.indices.append(tmp)
 
+    def __param_value(self, param: Union[int, Sequence[int]], index: int) -> int:
+        return param if isinstance(param, int) else param[index]
 
+    def __validate_attribute_params(self, data: Sequence[Sequence[Union[str, int]]]) -> None:
+        num_attributes = len(data[0])
+
+        if not isinstance(self.bits_per_feature, int):
+            assert len(self.bits_per_feature) == num_attributes, (
+                f"Invalid number ({len(self.bits_per_feature)}) of values for bits_per_feature. "
+                f"Must either be one value or one value per attribute ({num_attributes})."
+            )
+
+        if not isinstance(self.ngram_size, int):
+            assert len(self.ngram_size) == num_attributes, (
+                f"Invalid number ({len(self.ngram_size)}) of values for ngram_size. "
+                f"Must either be one value or one value per attribute ({num_attributes})."
+            )
 
     def __create_schema(self, data: Sequence[Sequence[Union[str, int]]]):
         """
-        Creates a linking schema for the CLKhash library based on the parameters specified during creation of the
-        Encoder.
+        Create a CLKHash schema based on the encoder parameters.
         :param data: The data to encode
-        :return: Nothing.
+        :return: No return value.
         """
         fields = []
         i = 0
@@ -132,19 +147,17 @@ class BFEncoder():
             # Set StringSpec for string features and IntegerSpec for int features. Note: Right now,
             # only String and Integer features are allowed. Also, the data type at a specific index must be the same
             # across all records.
-            if type(feature) == str:
+            if isinstance(feature, str):
                 fields.append(StringSpec(str(i),
                                          FieldHashingProperties(comparator=NgramComparison(
-                                             self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
+                                             self.__param_value(self.ngram_size, i)),
                                              strategy=BitsPerTokenStrategy(
-                                                 self.bits_per_feature if type(self.bits_per_feature) == int else
-                                                 self.bits_per_feature[i]
+                                                 self.__param_value(self.bits_per_feature, i)
                                              ))))
             else:
                 fields.append(IntegerSpec(str(i), FieldHashingProperties(comparator=NgramComparison(
-                    self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
-                    strategy=BitsPerTokenStrategy(self.bits_per_feature if type(self.bits_per_feature) == int else
-                                                    self.bits_per_feature[i]))))
+                    self.__param_value(self.ngram_size, i)),
+                    strategy=BitsPerTokenStrategy(self.__param_value(self.bits_per_feature, i)))))
             i += 1
 
         self.schema = Schema(fields, self.filter_size)
@@ -157,34 +170,16 @@ class BFEncoder():
         :return: a MxN array of bits, where M is the number of records (length of data) and N is the size of the bloom
         filter.
         """
-        if not type(self.bits_per_feature) == int:
-            assert len(self.bits_per_feature) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of "\
-                "values for bits_per_feature. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
+        self.__validate_attribute_params(data)
 
-        if not type(self.ngram_size) == int:
-            assert len(self.ngram_size) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
-                "values for ngram_size. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
-
-        # print("DEB: Schema")
         self.__create_schema(data)
-        # print("DEB: CLKs")
         enc_data = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
         # Convert the bitarrays into lists of bits, then stack them into a numpy array. Cannot stack directly, because
         # numpy would then pack the bits (https://numpy.org/doc/stable/reference/generated/numpy.packbits.html)
-        # print("DEB: Stacking")
         enc_data = np.stack([list(barr) for barr in enc_data]).astype(bool)
 
         if self.diffusion:
             eld = np.zeros((enc_data.shape[0], self.eld_length), dtype=bool)
-
-            #for i in range(enc_data.shape[0]):
-            #    for j in range(self.eld_length):
-            #        val = enc_data[i, self.indices[j][0]]
-            #        for k in self.indices[j][1:]:
-            #            val ^= enc_data[i,k]
-            #        eld[i,j] = val
             for i, cur_inds in enumerate(self.indices):
                 eld[:, i] = np.logical_xor.reduce(enc_data[:, cur_inds], axis=1)
 
@@ -204,10 +199,9 @@ class BFEncoder():
         :return: The similarities/distances as a list of tuples: [(i,j,val),...], where i and j are the indices of
         the records in data and val is the computed similarity/distance.
         """
-        available_metrics = ["dice", "jaccard", "heng"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        available_metrics = ("dice", "jaccard", "heng")
+        validate_metric(metric, available_metrics)
 
-        #print("DEB: Encoding")
         data = [["".join(d).lower()] for d in data]
         enc = self.encode(data)
 
@@ -218,12 +212,11 @@ class BFEncoder():
 
         uids = np.array(uids).astype(np.float64)
 
-        pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
-        return pw_dice
+        pairwise_scores = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0], 2)), self.workers)
+        return pairwise_scores
 
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
 
-        #print("DEB: Encoding")
         data = [["".join(d).lower()] for d in data]
         enc = self.encode(data)
 

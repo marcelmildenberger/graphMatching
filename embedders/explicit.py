@@ -81,21 +81,21 @@ class ExplicitEmbedder(Embedder):
 
         # If the encodings are stored in a Numpy array, set the length to the number of non-zero elements.
         # For Bit Arrays this corresponds to the hamming weight, for other encodings it is equal to the length.
-        if type(self.encodings) in [np.ndarray, np.array]:
+        if isinstance(self.encodings, np.ndarray):
             for uid, enc in zip(self.uids, self.encodings):
                 self.length_dict[uid] = len(np.where(enc != 0)[0])
         # If the encodings are a list of lists, set the node length to the number of elements in the respective list.
-        elif type(self.encodings) == list:
+        elif isinstance(self.encodings, list):
             for uid, enc in zip(self.uids, self.encodings):
                 self.length_dict[uid] = len(set(enc))
         else:
-            raise "Invalid encoding datatype"
+            raise TypeError(f"Invalid encoding datatype: {type(self.encodings)!r}")
 
         # We have to turn the encodings into hashable datatypes, i.e. tuples, to use them as keys in dictionaries.
         freq_dict = defaultdict(ret_zero)
 
         # If the encodings are bit arrays store the position of the 1-bits
-        if (type(self.encodings) in [np.ndarray, np.array]) and (self.encodings.dtype == np.bool_):
+        if isinstance(self.encodings, np.ndarray) and self.encodings.dtype == np.bool_:
             for enc in self.encodings:
                 freq_dict[tuple(np.where(enc == 1)[0])] = freq_dict[tuple(np.where(enc == 1)[0])] + 1
             # Store the frequencies by UID
@@ -119,7 +119,7 @@ class ExplicitEmbedder(Embedder):
         self.degree_centr = nx.degree_centrality(self.G)
 
     def train(self, data):
-        if type(data) == str:
+        if isinstance(data, str):
             self.__load(data)
         else:
             self.G = data

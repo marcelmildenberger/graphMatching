@@ -1,16 +1,10 @@
 from sklearn.neighbors import NearestNeighbors
-from .matcher import Matcher
+from .matcher import Matcher, validate_distance_metric
 
 
 class NNMatcher(Matcher):
     def __init__(self, metric: str = "cosine", workers: int = -1):
-        available_metrics = ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice",
-                             "euclidean", "hamming", "jaccard", "jensenshannon", "kulczynski1", "mahalanobis",
-                             "matching", "l1", "l2", "manhattan",
-                             "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath",
-                             "sqeuclidean", "yule"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-        self.metric = metric
+        self.metric = validate_distance_metric(metric)
         self.workers = workers
 
     def match(self, alice_data, alice_uids, eve_data, eve_uids):
@@ -26,6 +20,6 @@ class NNMatcher(Matcher):
 
         mapping = {}
         for i, nearest in enumerate(indices):
-            mapping["S_"+str(smaller_uids[i])] = "L_"+str(larger_uids[nearest[0]])
+            mapping["S_" + str(smaller_uids[i])] = "L_" + str(larger_uids[nearest[0]])
 
         return mapping

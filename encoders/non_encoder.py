@@ -4,7 +4,7 @@ import numpy as np
 import os
 import gc
 from joblib import Parallel, delayed
-from .encoder import Encoder
+from .encoder import Encoder, validate_metric
 
 def make_inds(i_vals, numex):
     tmp1 = []
@@ -91,8 +91,8 @@ class NonEncoder(Encoder):
         self.workers = os.cpu_count() if workers == -1 else workers
 
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs = False):
-        available_metrics = ["jaccard", "dice"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
+        available_metrics = ("jaccard", "dice")
+        validate_metric(metric, available_metrics)
         numex = len(uids)
         uids = np.array(uids, dtype=np.float32)
 

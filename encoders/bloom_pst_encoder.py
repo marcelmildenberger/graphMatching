@@ -9,7 +9,7 @@ from clkhash.field_formats import *
 from clkhash.schema import Schema
 from clkhash.comparators import NgramComparison
 from tqdm import tqdm
-from .encoder import Encoder
+from .encoder import Encoder, validate_metric
 from numpy.random import Generator, PCG64
 from primality import primality
 from joblib import Parallel, delayed
@@ -67,6 +67,7 @@ def make_inds(i_vals, numex):
         if len(tmp2) > 0:
             tmp1.append(np.vstack(tmp2))
     return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0, 2), dtype=int)
+
 
 def get_multiplicative_inverse(a, fieldsize):
     d, s, t = galois.egcd(a, fieldsize)
@@ -143,12 +144,14 @@ class BloomPSTEncoder(Encoder):
         # Generate a random prime q for coefficient mapping
         q_lower = ((2 * (l ** 2)) + l) * (self.p - 1) * 2 ** (k + 1)
         if q is None:
-            assert q_lower < (2**63)-1, "Lower bound of prime q is out of range for 64 bit integers!"
+            if q_lower >= (2 ** 63) - 1:
+                raise ValueError("Lower bound of prime q is out of range for 64 bit integers!")
             self.q = get_rand_safeprime(q_lower + 1, (2**63)-1)
             if verbose:
                 print("Chose prime q: %i" % self.q)
         else:
-            assert q > q_lower, ("Q is too small. Must be at least %i" % q_lower)
+            if q <= q_lower:
+                raise ValueError("Q is too small. Must be at least %i" % q_lower)
             self.q = q
 
         # Set up the Finite Field
@@ -186,6 +189,24 @@ class BloomPSTEncoder(Encoder):
         if verbose:
             print("Done.")
 
+    def __param_value(self, param, index):
+        return param if isinstance(param, int) else param[index]
+
+    def __validate_attribute_params(self, data):
+        num_attributes = len(data[0])
+
+        if not isinstance(self.n_hash_func, int):
+            assert len(self.n_hash_func) == num_attributes, (
+                f"Invalid number ({len(self.n_hash_func)}) of values for bits_per_feature. "
+                f"Must either be one value or one value per attribute ({num_attributes})."
+            )
+
+        if not isinstance(self.ngram_size, int):
+            assert len(self.ngram_size) == num_attributes, (
+                f"Invalid number ({len(self.ngram_size)}) of values for ngram_size. "
+                f"Must either be one value or one value per attribute ({num_attributes})."
+            )
+
     def __create_schema(self, data):
         """
         Creates a linking schema for the CLKhash library based on the parameters specified during creation of the
@@ -199,36 +220,24 @@ class BloomPSTEncoder(Encoder):
             # Set StringSpec for string features and IntegerSpec for int features. Note: Right now,
             # only String and Integer features are allowed. Also, the data type at a specific index must be the same
             # across all records.
-            if type(feature) == str:
+            if isinstance(feature, str):
                 fields.append(StringSpec(str(i),
                                          FieldHashingProperties(comparator=NgramComparison(
-                                             self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
+                                             self.__param_value(self.ngram_size, i)),
                                              strategy=BitsPerTokenStrategy(
-                                                 self.n_hash_func if type(self.n_hash_func) == int else
-                                                 self.n_hash_func[i]
+                                                 self.__param_value(self.n_hash_func, i)
                                              ))))
             else:
                 fields.append(IntegerSpec(str(i), FieldHashingProperties(comparator=NgramComparison(
-                    self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
-                    strategy=BitsPerTokenStrategy(self.n_hash_func if type(self.n_hash_func) == int else
-                                                    self.n_hash_func[i]))))
+                    self.__param_value(self.ngram_size, i)),
+                    strategy=BitsPerTokenStrategy(self.__param_value(self.n_hash_func, i)))))
             i += 1
 
         self.schema = Schema(fields, self.bf_size)
 
     def encode(self, data):
         data = [["".join(d).lower()] for d in data]
-
-        if not type(self.n_hash_func) == int:
-            assert len(self.n_hash_func) == len(data[0]), "Invalid number (" + str(len(self.n_hash_func)) + ") of "\
-                "values for bits_per_feature. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
-
-        if not type(self.ngram_size) == int:
-            assert len(self.ngram_size) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
-                "values for ngram_size. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
-
+        self.__validate_attribute_params(data)
         self.__create_schema(data)
         bloom_filters = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
         bloom_filters = np.stack([list(barr) for barr in bloom_filters]).astype(int)
@@ -242,20 +251,11 @@ class BloomPSTEncoder(Encoder):
         return [np.array(enc) for encs in enc_chunks for enc in encs]
 
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False):
-        available_metrics = ["heng"]
-        assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
-
-        if not type(self.n_hash_func) == int:
-            assert len(self.n_hash_func) == len(data[0]), "Invalid number (" + str(len(self.n_hash_func)) + ") of "\
-                "values for bits_per_feature. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
-
-        if not type(self.ngram_size) == int:
-            assert len(self.ngram_size) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
-                "values for ngram_size. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
+        available_metrics = ("heng",)
+        validate_metric(metric, available_metrics)
 
         data = [["".join(d).lower()] for d in data]
+        self.__validate_attribute_params(data)
 
         self.__create_schema(data)
         bloom_filters = clk.generate_clks(data, self.schema, self.secret)  # Returns a list of bitarrays
