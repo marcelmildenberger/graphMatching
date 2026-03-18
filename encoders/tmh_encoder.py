@@ -107,8 +107,8 @@ class TMHEncoder(Encoder):
 
         self.hashtables = np.random.randint(2, size=(
         self.num_hash_func, self.num_sub_keys, 2 ** self.subkey_length, self.num_hash_bits), dtype=bool)
-        if random_seed != None:
-            if type(random_seed) == str:
+        if random_seed is not None:
+            if isinstance(random_seed, str):
                 random_seed = int(hashlib.md5(random_seed.encode()).hexdigest(), 16) % (2 ** 32 - 1)
             np.random.seed(random_seed)
 

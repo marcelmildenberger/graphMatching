@@ -79,11 +79,11 @@ class NetMFEmbedder(Embedder):
         :return: Nothing
         """
         graph = None
-        if type(data) == str:
+        if isinstance(data, str):
             graph = nx.read_weighted_edgelist(data)
             adj = nx.adjacency_matrix(graph).todense().astype(float)
 
-        elif type(data) in [list, np.ndarray]:
+        elif isinstance(data, (list, np.ndarray)):
             graph = nx.from_pandas_edgelist(
                 pd.DataFrame(data,
                              columns=["source", "target", "weight"]).astype({'source': 'int32', 'target': 'int32'}),

@@ -2,10 +2,11 @@
 import gc
 import os
 import pickle
-from typing import Sequence, AnyStr, List, Tuple, Any, Union
-import numpy as np
 import hashlib
-import math
+from numbers import Integral
+from typing import AnyStr, List, Sequence, Tuple, Union
+
+import numpy as np
 from clkhash import clk
 from clkhash.field_formats import *
 from clkhash.schema import Schema
@@ -13,6 +14,22 @@ from clkhash.comparators import NgramComparison
 import numba as nb
 from scipy.special import binom
 from .encoder import normalize_joined_record, normalize_record_values
+
+
+def _is_scalar_int(value) -> bool:
+    return isinstance(value, Integral)
+
+
+def _pack_combined_data(data, enc, uids):
+    enc_as_string = ["".join(map(str, bits)) for bits in enc.astype(int)]
+    return np.column_stack((data, enc_as_string, uids))
+
+
+def _store_encoding_cache(uids, enc):
+    cache = dict(zip(uids, enc))
+    with open("./data/encodings/encoding_dict.pck", "wb") as f:
+        pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+
 
 def pack_rows(bools: np.ndarray) -> np.ndarray:
     """
@@ -96,7 +113,7 @@ class BFEncoder():
             assert t is not None, "Number of XORed bits must be specified if diffusion is enabled"
             assert self.t <= self.filter_size, "Cannot select more bits for XORing than are present in the BF!"
 
-            if type(self.secret) == str:
+            if isinstance(self.secret, str):
                 random_seed = int(hashlib.md5(self.secret.encode()).hexdigest(), 16) % (2 ** 32 - 1)
             else:
                 random_seed = self.secret
@@ -118,7 +135,28 @@ class BFEncoder():
 
                 self.indices.append(tmp)
 
+    def __parameter_for_index(self, parameter, index):
+        return parameter if _is_scalar_int(parameter) else parameter[index]
 
+    def __validate_feature_configuration(self, num_columns):
+        if not _is_scalar_int(self.bits_per_feature):
+            assert len(self.bits_per_feature) == num_columns, (
+                "Invalid number (" + str(len(self.bits_per_feature)) + ") of values for bits_per_feature. "
+                "Must either be one value or one value per attribute (" + str(num_columns) + ")."
+            )
+
+        if not _is_scalar_int(self.ngram_size):
+            assert len(self.ngram_size) == num_columns, (
+                "Invalid number (" + str(len(self.ngram_size)) + ") of values for ngram_size. "
+                "Must either be one value or one value per attribute (" + str(num_columns) + ")."
+            )
+
+    def __encode_joined_records(self, data):
+        return self.encode([[normalize_joined_record(row)] for row in data])
+
+    def __compute_pairwise_dice(self, enc, uids):
+        uids_array = np.asarray(uids, dtype=np.float64)
+        return calc_dice_fast(pack_rows(enc), uids_array, int(binom(enc.shape[0], 2)), self.workers)
 
     def __create_schema(self, data: Sequence[Sequence[Union[str, int]]]):
         """
@@ -133,19 +171,17 @@ class BFEncoder():
             # Set StringSpec for string features and IntegerSpec for int features. Note: Right now,
             # only String and Integer features are allowed. Also, the data type at a specific index must be the same
             # across all records.
-            if type(feature) == str:
+            if isinstance(feature, str):
                 fields.append(StringSpec(str(i),
                                          FieldHashingProperties(comparator=NgramComparison(
-                                             self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
+                                             self.__parameter_for_index(self.ngram_size, i)),
                                              strategy=BitsPerTokenStrategy(
-                                                 self.bits_per_feature if type(self.bits_per_feature) == int else
-                                                 self.bits_per_feature[i]
+                                                 self.__parameter_for_index(self.bits_per_feature, i)
                                              ))))
             else:
                 fields.append(IntegerSpec(str(i), FieldHashingProperties(comparator=NgramComparison(
-                    self.ngram_size if type(self.ngram_size) == int else self.ngram_size[i]),
-                    strategy=BitsPerTokenStrategy(self.bits_per_feature if type(self.bits_per_feature) == int else
-                                                    self.bits_per_feature[i]))))
+                    self.__parameter_for_index(self.ngram_size, i)),
+                    strategy=BitsPerTokenStrategy(self.__parameter_for_index(self.bits_per_feature, i)))))
             i += 1
 
         self.schema = Schema(fields, self.filter_size)
@@ -158,15 +194,7 @@ class BFEncoder():
         :return: a MxN array of bits, where M is the number of records (length of data) and N is the size of the bloom
         filter.
         """
-        if not type(self.bits_per_feature) == int:
-            assert len(self.bits_per_feature) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of "\
-                "values for bits_per_feature. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
-
-        if not type(self.ngram_size) == int:
-            assert len(self.ngram_size) == len(data[0]), "Invalid number (" + str(len(self.ngram_size)) + ") of " \
-                "values for ngram_size. Must either be one value or one value per attribute (" + str(
-                len(data[0])) + ")."
+        self.__validate_feature_configuration(len(data[0]))
 
         normalized_data = [normalize_record_values(row) for row in data]
 
@@ -210,18 +238,12 @@ class BFEncoder():
         available_metrics = ["dice", "jaccard", "heng"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
-        #print("DEB: Encoding")
-        data = [[normalize_joined_record(d)] for d in data]
-        enc = self.encode(data)
+        enc = self.__encode_joined_records(data)
 
         if store_encs:
-            cache = dict(zip(uids, enc))
-            with open("./data/encodings/encoding_dict.pck", "wb") as f:
-                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+            _store_encoding_cache(uids, enc)
 
-        uids = np.array(uids).astype(np.float64)
-
-        pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
+        pw_dice = self.__compute_pairwise_dice(enc, uids)
         return enc, pw_dice
 
     def encode_and_compare_and_append(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str],
@@ -229,27 +251,15 @@ class BFEncoder():
         available_metrics = ["dice", "jaccard", "heng"]
         assert metric in available_metrics, "Invalid similarity metric. Must be one of " + str(available_metrics)
 
-        #print("DEB: Encoding")
-        data_joined = [[normalize_joined_record(d)] for d in data]
-        enc = self.encode(data_joined)
-        enc_as_int = enc.astype(int)
-        enc_as_string = [''.join(map(str, bits)) for bits in enc_as_int]
-        combined_data = np.column_stack((data, enc_as_string, uids))
+        enc = self.__encode_joined_records(data)
+        combined_data = _pack_combined_data(data, enc, uids)
 
         if store_encs:
-            cache = dict(zip(uids, enc))
-            with open("./data/encodings/encoding_dict.pck", "wb") as f:
-                pickle.dump(cache, f, pickle.HIGHEST_PROTOCOL)
+            _store_encoding_cache(uids, enc)
 
-        uids = np.array(uids).astype(np.float64)
-
-        pw_dice = calc_dice_fast(pack_rows(enc), uids, int(binom(enc.shape[0],2)), self.workers)
+        pw_dice = self.__compute_pairwise_dice(enc, uids)
         return pw_dice, combined_data
 
     def get_encoding_dict(self, data: Sequence[Sequence[Union[str, int]]], uids: List[str]):
-
-        #print("DEB: Encoding")
-        data = [[normalize_joined_record(d)] for d in data]
-        enc = self.encode(data)
-
+        enc = self.__encode_joined_records(data)
         return dict(zip(uids, enc))
