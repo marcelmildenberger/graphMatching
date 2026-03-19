@@ -1,64 +1,12 @@
 import gc
 import os
 import pickle
-from typing import List, Union
+from typing import Union
+
+import numpy as np
+
 from .encoder import Encoder, validate_metric
 from record_encoder import BigramRecordEncoder as BaseBigramRecordEncoder
-import numpy as np
-from joblib import Parallel, delayed
-
-def make_inds(i_vals: np.ndarray, numex: int) -> np.ndarray:
-    tmp1: List[np.ndarray] = []
-    for i in i_vals:
-        tmp2 = []
-        for j in range(i + 1, numex):
-            tmp2.append(np.array([i, j], dtype=int))
-        if len(tmp2) > 0:
-            tmp1.append(np.vstack(tmp2))
-    return np.vstack(tmp1) if len(tmp1) > 0 else np.ndarray(shape=(0, 2), dtype=int)
-
-
-def compute_metrics(
-    encoder: BaseBigramRecordEncoder,
-    inds: np.ndarray,
-    encs: np.ndarray,
-    metric: str,
-    sim: bool,
-) -> np.ndarray:
-    """Compute pairwise metrics for the given index pairs using BaseBigramRecordEncoder.bit_vector_metrics.
-
-    Supported metrics:
-      - "dice": Dice similarity (or distance if sim=False)
-      - "hamming_distance": Hamming distance (# differing bits)
-      - "hamming_similarity": Hamming similarity (d - hamming_distance)
-
-    Note: For Hamming metrics, `sim` is ignored because the metric name already determines the interpretation.
-    """
-    tmp = np.zeros(len(inds), dtype=np.float32)
-    pos = 0
-
-    prev_i = prev_j = None
-    v_i = v_j = None
-
-    for i, j in inds:
-        if i != prev_i:
-            v_i = encs[i]
-            prev_i = i
-        if j != prev_j:
-            v_j = encs[j]
-            prev_j = j
-
-        m = encoder.bit_vector_metrics(v_i, v_j)
-        val = float(m[metric])
-
-        # Only Dice supports similarity vs distance toggle here.
-        if metric == "dice" and not sim:
-            val = 1.0 - val
-
-        tmp[pos] = val
-        pos += 1
-
-    return tmp
 
 
 class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
@@ -67,43 +15,67 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         key: Union[str, int],
         round_structure: str = "D1S2",
         rng_bits: int = 32,
-        xor_whitening: bool = False,
-        xor_target_weight: int | None = None,
+        input_encoding: str = "indicator",
+        input_codeword_weight: int | None = None,
+        workers: int = -1,
     ):
+        resolved_workers = (os.cpu_count() or 1) if workers == -1 else max(1, int(workers))
         super().__init__(
             key=key,
             round_structure=round_structure,
             rng_bits=rng_bits,
-            xor_whitening=xor_whitening,
-            xor_target_weight=xor_target_weight,
+            input_encoding=input_encoding,
+            input_codeword_weight=input_codeword_weight,
+            dataset_workers=resolved_workers,
         )
-        self.workers = os.cpu_count() or 1
-        
+        self.workers = resolved_workers
+
+    def _pairwise_metric_values(self, encs: np.ndarray, metric: str, sim: bool) -> np.ndarray:
+        encs_i32 = encs.astype(np.int32, copy=False)
+        weights = encs_i32.sum(axis=1, dtype=np.int32)
+        common_ones = encs_i32 @ encs_i32.T
+        denom = weights[:, None] + weights[None, :]
+        hamming_distance = denom - (2 * common_ones)
+
+        if metric == "dice":
+            values = np.ones_like(common_ones, dtype=np.float32)
+            nonzero = denom > 0
+            values[nonzero] = (2.0 * common_ones[nonzero]) / denom[nonzero]
+            if not sim:
+                values = 1.0 - values
+        elif metric == "hamming_distance":
+            values = hamming_distance.astype(np.float32, copy=False)
+        elif metric == "hamming_similarity":
+            values = (self.num_bits - hamming_distance).astype(np.float32, copy=False)
+        else:
+            raise ValueError(f"Unsupported metric: {metric}")
+
+        return values
+
     def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False, precomputed_encs=None):
-        # Supported metrics. (We intentionally drop Jaccard here.)
         available_metrics = ("dice", "hamming_distance", "hamming_similarity")
         validate_metric(metric, available_metrics, label="metric")
 
         numex = len(uids)
-        uids = np.array(uids, dtype=np.float64)  # keep full precision for IDs
+        if numex < 2:
+            return np.zeros((0, 3), dtype=np.float32)
+
+        uids = np.asarray(uids, dtype=np.float64)
 
         if precomputed_encs is not None:
             encs = np.asarray(precomputed_encs, dtype=np.uint8)
-            if encs.shape[0] != numex or encs.shape[1] != self.num_bits:
-                raise ValueError("precomputed_encs has shape "
-                                 f"{encs.shape}, expected ({numex}, {self.num_bits})")
-            enc_list = None
+            if encs.shape != (numex, self.num_bits):
+                raise ValueError(
+                    f"precomputed_encs has shape {encs.shape}, expected ({numex}, {self.num_bits})"
+                )
         else:
-            # Normalize like other encoders: lowercase, concatenate fields
             normalized = []
             for record in data:
                 if isinstance(record, str):
                     normalized.append(record.lower())
                 else:
                     normalized.append("".join(map(str, record)).lower())
-
-            enc_list = [self.encode(rec) for rec in normalized]
-            encs = np.stack(enc_list).astype(np.uint8)
+            encs = self.encode_dataset(normalized).astype(np.uint8, copy=False)
 
         if store_encs:
             os.makedirs("./graphMatching/data/encodings", exist_ok=True)
@@ -112,28 +84,16 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
                 pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
             del tmpdict
 
-        parallel = Parallel(n_jobs=self.workers, prefer="threads")
-        output_generator = parallel(delayed(make_inds)(i, numex) for i in np.array_split(np.arange(numex), self.workers * 4))
-        inds = np.vstack(output_generator)
-        numinds = len(inds)
-        inds_split = np.array_split(inds, self.workers)
-        pw_metrics = parallel(delayed(compute_metrics)(self, ind, encs, metric, sim) for ind in inds_split)
-        pw_metrics = np.concatenate(pw_metrics, axis=None)
-        re = np.zeros((numinds, 3), dtype=np.float32)
-        re[:, 2] = pw_metrics
+        metric_values = self._pairwise_metric_values(encs, metric, sim)
+        tri_upper = np.triu_indices(numex, k=1)
+        numinds = tri_upper[0].shape[0]
 
-        start = 0
-        for ind in inds_split:
-            end = start + len(ind)
-            ind[:, 0] = uids[ind[:, 0]]
-            ind[:, 1] = uids[ind[:, 1]]
-            re[start:end, 0:2] = ind
-            start = end
+        result = np.empty((numinds, 3), dtype=np.float32)
+        result[:, 0] = uids[tri_upper[0]]
+        result[:, 1] = uids[tri_upper[1]]
+        result[:, 2] = metric_values[tri_upper]
 
-        # Cleanup large intermediates
-        del inds_split, inds, pw_metrics, encs
-        if enc_list is not None:
-            del enc_list
+        del metric_values, encs
         gc.collect()
 
-        return re
+        return result

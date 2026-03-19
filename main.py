@@ -226,8 +226,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_encoder = BigramRecordEncoder(
                 key=alice_key,
                 round_structure=ENC_CONFIG["round_structure"],
-                xor_whitening=ENC_CONFIG.get("xor_whitening", False),
-                xor_target_weight=ENC_CONFIG.get("xor_target_weight"),
+                input_encoding=ENC_CONFIG.get("input_encoding", "indicator"),
+                input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
+                workers=GLOBAL_CONFIG["Workers"],
             )
         else:
             alice_encoder = NonEncoder(ENC_CONFIG["AliceN"])
@@ -238,13 +239,16 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
         pre_alice = lookup_preencoded(alice_uids)
+        alice_encode_kwargs = {}
+        if ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
+            alice_encode_kwargs["precomputed_encs"] = pre_alice
         alice_enc = alice_encoder.encode_and_compare(
             alice_data,
             alice_uids,
             metric=ENC_CONFIG["AliceMetric"],
             sim=True,
             store_encs=GLOBAL_CONFIG["SaveAliceEncs"],
-            precomputed_encs=None,
+            **alice_encode_kwargs,
         )
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
@@ -365,8 +369,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_encoder = BigramRecordEncoder(
                 key=eve_key,
                 round_structure=ENC_CONFIG["round_structure"],
-                xor_whitening=ENC_CONFIG.get("xor_whitening", False),
-                xor_target_weight=ENC_CONFIG.get("xor_target_weight"),
+                input_encoding=ENC_CONFIG.get("input_encoding", "indicator"),
+                input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
+                workers=GLOBAL_CONFIG["Workers"],
             )
         else:
             eve_encoder = NonEncoder(ENC_CONFIG["EveN"])
@@ -378,12 +383,16 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
 
         pre_eve = lookup_preencoded(eve_uids)
+        eve_encode_kwargs = {}
+        if ENC_CONFIG["EveAlgo"] == "RoundBasedEncoder":
+            eve_encode_kwargs["precomputed_encs"] = pre_eve
         eve_enc = eve_encoder.encode_and_compare(
             eve_data,
             eve_uids,
             metric=ENC_CONFIG["EveMetric"],
             sim=True,
             store_encs=GLOBAL_CONFIG["SaveEveEncs"],
+            **eve_encode_kwargs,
         )
 
         # Check if all similarities are zero. If yes, set them to 0.5 as the attack could not run otherwise
@@ -791,8 +800,8 @@ if __name__ == "__main__":
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
-        "xor_whitening": False,
-        "xor_target_weight": None,
+        "input_encoding": "indicator",
+        "input_codeword_weight": None,
         "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,
