@@ -15,7 +15,7 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         key: Union[str, int],
         round_structure: str = "D1S2",
         rng_bits: int = 32,
-        input_encoding: str = "indicator",
+        input_encoding: str = "one_hot_encoding",
         input_codeword_weight: int | None = None,
         workers: int = -1,
     ):

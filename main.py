@@ -226,7 +226,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_encoder = BigramRecordEncoder(
                 key=alice_key,
                 round_structure=ENC_CONFIG["round_structure"],
-                input_encoding=ENC_CONFIG.get("input_encoding", "indicator"),
+                input_encoding=ENC_CONFIG.get("input_encoding", "one_hot_encoding"),
                 input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
                 workers=GLOBAL_CONFIG["Workers"],
             )
@@ -369,7 +369,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_encoder = BigramRecordEncoder(
                 key=eve_key,
                 round_structure=ENC_CONFIG["round_structure"],
-                input_encoding=ENC_CONFIG.get("input_encoding", "indicator"),
+                input_encoding=ENC_CONFIG.get("input_encoding", "one_hot_encoding"),
                 input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
                 workers=GLOBAL_CONFIG["Workers"],
             )
@@ -800,7 +800,7 @@ if __name__ == "__main__":
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
-        "input_encoding": "indicator",
+        "input_encoding": "one_hot_encoding",
         "input_codeword_weight": None,
         "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString42",
