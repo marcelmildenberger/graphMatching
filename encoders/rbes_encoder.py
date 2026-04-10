@@ -6,7 +6,10 @@ from typing import Union
 import numpy as np
 
 from .encoder import Encoder, validate_metric
-from record_encoder import BigramRecordEncoder as BaseBigramRecordEncoder
+from record_encoder import (
+    BigramRecordEncoder as BaseBigramRecordEncoder,
+    DEFAULT_INPUT_CODEWORD_WEIGHT,
+)
 
 
 class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
@@ -16,7 +19,7 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         round_structure: str = "D1S2",
         rng_bits: int = 32,
         input_encoding: str = "one_hot_encoding",
-        input_codeword_weight: int | None = None,
+        input_codeword_weight: int | None = DEFAULT_INPUT_CODEWORD_WEIGHT,
         workers: int = -1,
     ):
         resolved_workers = (os.cpu_count() or 1) if workers == -1 else max(1, int(workers))
