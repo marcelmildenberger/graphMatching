@@ -9,8 +9,6 @@ import time
 
 import numpy as np
 
-from hashlib import md5
-
 from graphMatching.aligners.closed_form_procrustes import ProcrustesAligner
 from graphMatching.aligners.wasserstein_procrustes import WassersteinAligner
 from graphMatching.embedders.node2vec import N2VEmbedder
@@ -20,7 +18,7 @@ from graphMatching.encoders.tmh_encoder import TMHEncoder
 from graphMatching.encoders.tsh_encoder import TSHEncoder
 from graphMatching.encoders.rbes_encoder import BigramRecordEncoder
 from graphMatching.encoders.non_encoder import NonEncoder
-from graphMatching.encoders.pst_encoder import PSTEncoder
+from graphMatching.gma_version import GMA_HARNESS_VERSION, attack_cache_hashes, eve_precomputed_vectors
 from graphMatching.matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
 
 from graphMatching.matchers.spatial import NNMatcher
@@ -52,48 +50,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
     if GLOBAL_CONFIG["BenchMode"]:
         start_total = time.time()
 
-    # Compute hashes of configuration to store/load data and thus avoid redundant computations.
-    # Using MD5 because Python's native hash() is not stable across processes
-    if GLOBAL_CONFIG["DropFrom"] == "Alice":
-
-        eve_enc_hash = md5(
-            ("%s-%s-DropAlice" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
-        alice_enc_hash = md5(
-            ("%s-%s-%s-DropAlice" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                     GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
-
-        eve_emb_hash = md5(
-            ("%s-%s-%s-DropAlice" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
-
-        alice_emb_hash = md5(("%s-%s-%s-%s-DropAlice" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                                         GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
-    elif GLOBAL_CONFIG["DropFrom"] == "Eve":
-
-        eve_enc_hash = md5(
-            ("%s-%s-%s-DropEve" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                   GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
-
-        alice_enc_hash = md5(("%s-%s-DropEve" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"])).encode()).hexdigest()
-
-        eve_emb_hash = md5(("%s-%s-%s-%s-DropEve" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                                     GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
-
-        alice_emb_hash = md5(("%s-%s-%s-DropEve" % (str(EMB_CONFIG), str(ENC_CONFIG),
-                                                    GLOBAL_CONFIG["Data"])).encode()).hexdigest()
-    else:
-        eve_enc_hash = md5(
-            ("%s-%s-%s-DropBoth" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
-
-        alice_enc_hash = md5(
-            ("%s-%s-%s-DropBoth" % (str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                    GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
-
-        eve_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                                      GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
-
-        alice_emb_hash = md5(("%s-%s-%s-%s-DropBoth" % (str(EMB_CONFIG), str(ENC_CONFIG), GLOBAL_CONFIG["Data"],
-                                                        GLOBAL_CONFIG["Overlap"])).encode()).hexdigest()
+    # Salt graph/embedding caches with the harness version so behavioral fixes
+    # cannot load artifacts produced by an older attack implementation.
+    eve_enc_hash, alice_enc_hash, eve_emb_hash, alice_emb_hash = attack_cache_hashes(
+        GLOBAL_CONFIG,
+        ENC_CONFIG,
+        EMB_CONFIG,
+    )
 
     ##############################################
     #    ENCODING/SIMILARITY GRAPH GENERATION    #
@@ -218,6 +181,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                     ENC_CONFIG["AliceRandMode"], secret=ENC_CONFIG["AliceSecret"],
                                     verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["AliceAlgo"] in ["PST", "Heng"]:
+            from graphMatching.encoders.pst_encoder import PSTEncoder
+
             alice_encoder = PSTEncoder(ENC_CONFIG["AlicePSTK"], ENC_CONFIG["AlicePSTL"], ENC_CONFIG["AlicePSTP"],
                                        charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
@@ -361,6 +326,8 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                     ENC_CONFIG["EveRandMode"], secret=ENC_CONFIG["EveSecret"],
                                     verbose=GLOBAL_CONFIG["Verbose"], workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["EveAlgo"] in ["PST", "Heng"]:
+            from graphMatching.encoders.pst_encoder import PSTEncoder
+
             eve_encoder = PSTEncoder(ENC_CONFIG["EvePSTK"], ENC_CONFIG["EvePSTL"], ENC_CONFIG["EvePSTP"],
                                        charset=ENC_CONFIG["EveCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
@@ -382,7 +349,9 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Encode Alice's data and compute pairwise similarities of the encodings.
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
 
-        pre_eve = lookup_preencoded(eve_uids)
+        # PreencodedTsv is Alice's released view. Eve must encode her auxiliary
+        # records independently with EveSecret instead of reusing Alice's bits.
+        pre_eve = eve_precomputed_vectors(eve_uids, lookup_preencoded)
         eve_encode_kwargs = {}
         if ENC_CONFIG["EveAlgo"] == "RoundBasedEncoder":
             eve_encode_kwargs["precomputed_encs"] = pre_eve
