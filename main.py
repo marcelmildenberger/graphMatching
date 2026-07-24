@@ -18,7 +18,12 @@ from graphMatching.encoders.tmh_encoder import TMHEncoder
 from graphMatching.encoders.tsh_encoder import TSHEncoder
 from graphMatching.encoders.rbes_encoder import BigramRecordEncoder
 from graphMatching.encoders.non_encoder import NonEncoder
-from graphMatching.gma_version import GMA_HARNESS_VERSION, attack_cache_hashes, eve_precomputed_vectors
+from graphMatching.gma_version import (
+    GMA_HARNESS_VERSION,
+    attack_cache_hashes,
+    eve_precomputed_vectors,
+    seed_gma_runtime,
+)
 from graphMatching.matchers.bipartite import GaleShapleyMatcher, SymmetricMatcher, MinWeightMatcher
 
 from graphMatching.matchers.spatial import NNMatcher
@@ -26,7 +31,10 @@ from graphMatching.utils import *
 
 
 def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
-
+    # Keep the historical public function signature while making every random
+    # split, sample, and stochastic helper reproducible for campaign jobs.
+    random_seed = int(GLOBAL_CONFIG.get("RandomSeed", 42))
+    seed_gma_runtime(random_seed)
 
     # Sanity Check: Ensure that valid options were specified by the user
     supported_matchings = ["MinWeight", "Stable", "Symmetric", "NearestNeighbor"]

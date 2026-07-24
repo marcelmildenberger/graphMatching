@@ -6,9 +6,20 @@ from functools import lru_cache
 from hashlib import md5, sha256
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Optional, Tuple
+import random
+
+import numpy as np
 
 
-GMA_HARNESS_VERSION = "independent_eve_key_v1"
+GMA_HARNESS_VERSION = "independent_eve_key_deterministic_seed_v2"
+
+
+def seed_gma_runtime(seed: int) -> None:
+    """Seed the random sources used by the unchanged GMA public entry point."""
+
+    resolved = int(seed)
+    random.seed(resolved)
+    np.random.seed(resolved % (2**32 - 1))
 
 
 @lru_cache(maxsize=64)
