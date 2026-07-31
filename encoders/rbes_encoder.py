@@ -21,6 +21,7 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
         input_encoding: str = "one_hot_encoding",
         input_codeword_weight: int | None = DEFAULT_INPUT_CODEWORD_WEIGHT,
         workers: int = -1,
+        active_layer_count: int | None = None,
     ):
         resolved_workers = (os.cpu_count() or 1) if workers == -1 else max(1, int(workers))
         super().__init__(
@@ -30,6 +31,7 @@ class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
             input_encoding=input_encoding,
             input_codeword_weight=input_codeword_weight,
             dataset_workers=resolved_workers,
+            active_layer_count=active_layer_count,
         )
         self.workers = resolved_workers
 

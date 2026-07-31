@@ -201,6 +201,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                 round_structure=ENC_CONFIG["round_structure"],
                 input_encoding=ENC_CONFIG.get("input_encoding", "one_hot_encoding"),
                 input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
+                active_layer_count=ENC_CONFIG.get("active_layer_count"),
                 workers=GLOBAL_CONFIG["Workers"],
             )
         else:
@@ -346,6 +347,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                 round_structure=ENC_CONFIG["round_structure"],
                 input_encoding=ENC_CONFIG.get("input_encoding", "one_hot_encoding"),
                 input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
+                active_layer_count=ENC_CONFIG.get("active_layer_count"),
                 workers=GLOBAL_CONFIG["Workers"],
             )
         else:
