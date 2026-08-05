@@ -105,12 +105,18 @@ class TMHEncoder(Encoder):
         else:
             self.minhash_dtype = np.uint64
 
-        self.hashtables = np.random.randint(2, size=(
-        self.num_hash_func, self.num_sub_keys, 2 ** self.subkey_length, self.num_hash_bits), dtype=bool)
         if random_seed is not None:
             if isinstance(random_seed, str):
                 random_seed = int(hashlib.md5(random_seed.encode()).hexdigest(), 16) % (2 ** 32 - 1)
-            np.random.seed(random_seed)
+        # Use a local legacy RNG so the same seed produces the same tables as
+        # NumPy's seeded global RNG without mutating randomness elsewhere.
+        rng = np.random.RandomState(random_seed)
+        self.hashtables = rng.randint(2, size=(
+            self.num_hash_func,
+            self.num_sub_keys,
+            2 ** self.subkey_length,
+            self.num_hash_bits,
+        ), dtype=bool)
 
     def get_min_hash(self, val):
         key = bin(int(hashlib.md5(val.encode()).hexdigest(), 16))[-64:]  # Extract 64 least significant bits

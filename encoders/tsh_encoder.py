@@ -4,6 +4,7 @@ import random
 import string
 import pickle
 import numpy as np
+from hashlib import md5
 from hashlib import sha256
 from joblib import Parallel, delayed
 from .encoder import Encoder, normalize_joined_record
@@ -43,10 +44,12 @@ class TSHEncoder(Encoder):
         self.rand_mode = rand_mode
         self.ngram_size = ngram_size
         self.range_p = 2 * ((2 ** num_hash_funct) - 1)
-        if seed is not None:
-            np.random.seed(seed=seed)
-        self.hash_separators = np.random.randint(0, 2 ** 16, size=num_hash_funct).astype(str)
-        self.salt = ''.join(random.choice(string.ascii_letters) for i in range(32)) if secret is None else secret
+        if seed is None and secret is not None:
+            seed = int(md5(str(secret).encode()).hexdigest(), 16) % (2 ** 32 - 1)
+        rng = np.random.RandomState(seed)
+        self.hash_separators = rng.randint(0, 2 ** 16, size=num_hash_funct).astype(str)
+        salt_rng = random.Random(seed)
+        self.salt = ''.join(salt_rng.choice(string.ascii_letters) for _ in range(32)) if secret is None else secret
         self.verbose = verbose
         self.workers = os.cpu_count() if workers == -1 else workers
 
@@ -90,8 +93,7 @@ class TSHEncoder(Encoder):
                 # rand_min = col_index * (2 ** self.num_hash_funct)
                 # rand_max = rand_min + (2 ** self.num_hash_funct)
 
-                random.seed(hash_str)
-                hash_val = random.randint(rand_min, rand_max)
+                hash_val = random.Random(hash_str).randint(rand_min, rand_max)
             else:
                 hash_val = int(sha256(hash_str.encode()).hexdigest(), 16)
             hash_set.append(hash_val)

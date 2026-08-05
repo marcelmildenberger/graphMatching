@@ -10,12 +10,10 @@ from graphMatching.aligners.wasserstein_procrustes import WassersteinAligner
 from graphMatching.embedders.netmf import NetMFEmbedder
 from graphMatching.embedders.node2vec import N2VEmbedder
 from graphMatching.encoders.non_encoder import NonEncoder
-from graphMatching.encoders.precomputed_binary_encoder import PrecomputedBinaryEncoder
-from graphMatching.encoders.precomputed_set_encoder import PrecomputedSetEncoder
-from graphMatching.encoders.precomputed_tmh_encoder import PrecomputedTMHEncoder
 from graphMatching.matchers.bipartite import GaleShapleyMatcher, MinWeightMatcher, SymmetricMatcher
 from graphMatching.matchers.spatial import NNMatcher
 from utils.data_pipeline import read_tsv, resolve_encoded_dataset_path, save_tsv
+from utils.encoder_registry import get_encoder_spec, supported_gma_encoders
 
 
 def _load_overlap_count(enc_hash):
@@ -50,7 +48,7 @@ def _prepare_header(raw_header, algo, is_precomputed):
     if is_precomputed:
         return header
     if algo not in {"None", None}:
-        header.insert(-1, algo.lower())
+        header.insert(-1, get_encoder_spec(algo).column_name)
     return header
 
 
@@ -58,13 +56,11 @@ def _create_encoder(party, GLOBAL_CONFIG, ENC_CONFIG, is_precomputed):
     algo = ENC_CONFIG[f"{party}Algo"]
 
     if is_precomputed:
-        if algo in {"BloomFilter", "RSE"}:
-            return PrecomputedBinaryEncoder()
-        if algo == "TabMinHash":
-            return PrecomputedTMHEncoder(one_bit_hash=ENC_CONFIG[f"{party}1BitHash"])
-        if algo == "TwoStepHash":
-            return PrecomputedSetEncoder(workers=GLOBAL_CONFIG["Workers"])
-        raise ValueError(f"Unsupported precomputed encoder: {algo}")
+        return get_encoder_spec(algo).build_precomputed_encoder(
+            party,
+            GLOBAL_CONFIG,
+            ENC_CONFIG,
+        )
 
     return NonEncoder(ENC_CONFIG[f"{party}N"])
 
@@ -146,7 +142,7 @@ def validate_gma_configuration(GLOBAL_CONFIG, ENC_CONFIG, ALIGN_CONFIG):
         supported_drops,
     )
 
-    supported_encs = ["BloomFilter", "TabMinHash", "TwoStepHash", "RSE", "None", None]
+    supported_encs = supported_gma_encoders() + ["None", None]
     assert (
         ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs
     ), "Error: Encoding method must be one of %s" % (supported_encs,)
