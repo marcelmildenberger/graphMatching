@@ -1,104 +1,105 @@
+"""Small GMA adapter for the canonical round-based LRE."""
+
+from __future__ import annotations
+
 import gc
 import os
 import pickle
-from typing import Union
+from typing import Any
 
 import numpy as np
 
+from lre.config import LREConfig
+from record_encoder import RoundBasedEncoder
+
 from .encoder import Encoder, validate_metric
-from record_encoder import (
-    BigramRecordEncoder as BaseBigramRecordEncoder,
-    DEFAULT_INPUT_CODEWORD_WEIGHT,
-)
 
 
-class BigramRecordEncoder(BaseBigramRecordEncoder, Encoder):
+class RoundBasedLREEncoder(RoundBasedEncoder, Encoder):
     def __init__(
         self,
-        key: Union[str, int],
-        round_structure: str = "D1S2",
-        rng_bits: int = 32,
-        input_encoding: str = "one_hot_encoding",
-        input_codeword_weight: int | None = DEFAULT_INPUT_CODEWORD_WEIGHT,
+        *,
+        key: str | int,
+        config: LREConfig,
         workers: int = -1,
-        active_layer_count: int | None = None,
-    ):
+    ) -> None:
         resolved_workers = (os.cpu_count() or 1) if workers == -1 else max(1, int(workers))
-        super().__init__(
-            key=key,
-            round_structure=round_structure,
-            rng_bits=rng_bits,
-            input_encoding=input_encoding,
-            input_codeword_weight=input_codeword_weight,
-            dataset_workers=resolved_workers,
-            active_layer_count=active_layer_count,
-        )
+        super().__init__(key=key, config=config, dataset_workers=resolved_workers)
         self.workers = resolved_workers
 
-    def _pairwise_metric_values(self, encs: np.ndarray, metric: str, sim: bool) -> np.ndarray:
-        encs_i32 = encs.astype(np.int32, copy=False)
-        weights = encs_i32.sum(axis=1, dtype=np.int32)
-        common_ones = encs_i32 @ encs_i32.T
-        denom = weights[:, None] + weights[None, :]
-        hamming_distance = denom - (2 * common_ones)
-
+    def _pairwise_metric_values(
+        self, encodings: np.ndarray, metric: str, similarity: bool
+    ) -> np.ndarray:
+        values = encodings.astype(np.int32, copy=False)
+        weights = values.sum(axis=1, dtype=np.int32)
+        common = values @ values.T
+        denominator = weights[:, None] + weights[None, :]
+        hamming_distance = denominator - 2 * common
         if metric == "dice":
-            values = np.ones_like(common_ones, dtype=np.float32)
-            nonzero = denom > 0
-            values[nonzero] = (2.0 * common_ones[nonzero]) / denom[nonzero]
-            if not sim:
-                values = 1.0 - values
-        elif metric == "hamming_distance":
-            values = hamming_distance.astype(np.float32, copy=False)
-        elif metric == "hamming_similarity":
-            values = (self.num_bits - hamming_distance).astype(np.float32, copy=False)
-        else:
-            raise ValueError(f"Unsupported metric: {metric}")
+            output = np.ones_like(common, dtype=np.float32)
+            nonzero = denominator > 0
+            output[nonzero] = 2.0 * common[nonzero] / denominator[nonzero]
+            return output if similarity else 1.0 - output
+        if metric == "hamming_distance":
+            output = hamming_distance.astype(np.float32, copy=False)
+            return 1.0 - output / float(self.num_bits) if similarity else output
+        if metric == "hamming_similarity":
+            output = 1.0 - hamming_distance.astype(np.float32) / float(self.num_bits)
+            return output if similarity else 1.0 - output
+        raise ValueError(f"unsupported LRE graph metric: {metric}")
 
-        return values
+    def _record_indices(self, record: Any) -> np.ndarray:
+        if isinstance(record, str):
+            return self.string_to_bigram_indices(record)
+        joined = "".join(
+            "".join(
+                character
+                for character in str(raw_field).lower()
+                if character in self.alphabet
+            )
+            for raw_field in record
+        )
+        return self.string_to_bigram_indices(joined)
 
-    def encode_and_compare(self, data, uids, metric, sim=True, store_encs=False, precomputed_encs=None):
-        available_metrics = ("dice", "hamming_distance", "hamming_similarity")
-        validate_metric(metric, available_metrics, label="metric")
-
-        numex = len(uids)
-        if numex < 2:
+    def encode_and_compare(
+        self,
+        data,
+        uids,
+        metric,
+        sim=True,
+        store_encs=False,
+        precomputed_encs=None,
+    ):
+        validate_metric(
+            metric,
+            ("dice", "hamming_distance", "hamming_similarity"),
+            label="metric",
+        )
+        count = len(uids)
+        if count < 2:
             return np.zeros((0, 3), dtype=np.float32)
-
-        uids = np.asarray(uids, dtype=np.float64)
-
-        if precomputed_encs is not None:
-            encs = np.asarray(precomputed_encs, dtype=np.uint8)
-            if encs.shape != (numex, self.num_bits):
-                raise ValueError(
-                    f"precomputed_encs has shape {encs.shape}, expected ({numex}, {self.num_bits})"
-                )
+        numeric_uids = np.asarray(uids, dtype=np.float64)
+        if precomputed_encs is None:
+            index_sets = [self._record_indices(record) for record in data]
+            encodings = self.encode_dataset(index_sets).astype(np.uint8, copy=False)
         else:
-            normalized = []
-            for record in data:
-                if isinstance(record, str):
-                    normalized.append(record.lower())
-                else:
-                    normalized.append("".join(map(str, record)).lower())
-            encs = self.encode_dataset(normalized).astype(np.uint8, copy=False)
-
+            encodings = np.asarray(precomputed_encs, dtype=np.uint8)
+            if encodings.shape != (count, self.num_bits):
+                raise ValueError(
+                    f"precomputed_encs has shape {encodings.shape}, "
+                    f"expected ({count}, {self.num_bits})"
+                )
         if store_encs:
             os.makedirs("./graphMatching/data/encodings", exist_ok=True)
-            tmpdict = {str(uid): encs[i] for i, uid in enumerate(uids)}
-            with open("./graphMatching/data/encodings/encoding_dict.pck", "wb") as f:
-                pickle.dump(tmpdict, f, pickle.HIGHEST_PROTOCOL)
-            del tmpdict
-
-        metric_values = self._pairwise_metric_values(encs, metric, sim)
-        tri_upper = np.triu_indices(numex, k=1)
-        numinds = tri_upper[0].shape[0]
-
-        result = np.empty((numinds, 3), dtype=np.float32)
-        result[:, 0] = uids[tri_upper[0]]
-        result[:, 1] = uids[tri_upper[1]]
-        result[:, 2] = metric_values[tri_upper]
-
-        del metric_values, encs
+            by_uid = {str(uid): encodings[index] for index, uid in enumerate(uids)}
+            with open("./graphMatching/data/encodings/encoding_dict.pck", "wb") as handle:
+                pickle.dump(by_uid, handle, pickle.HIGHEST_PROTOCOL)
+        metric_values = self._pairwise_metric_values(encodings, metric, sim)
+        upper = np.triu_indices(count, k=1)
+        result = np.empty((upper[0].size, 3), dtype=np.float32)
+        result[:, 0] = numeric_uids[upper[0]]
+        result[:, 1] = numeric_uids[upper[1]]
+        result[:, 2] = metric_values[upper]
+        del metric_values, encodings
         gc.collect()
-
         return result

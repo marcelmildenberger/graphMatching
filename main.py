@@ -16,7 +16,8 @@ from graphMatching.embedders.netmf import NetMFEmbedder
 from graphMatching.encoders.bf_encoder import BFEncoder
 from graphMatching.encoders.tmh_encoder import TMHEncoder
 from graphMatching.encoders.tsh_encoder import TSHEncoder
-from graphMatching.encoders.rbes_encoder import BigramRecordEncoder
+from graphMatching.encoders.rbes_encoder import RoundBasedLREEncoder
+from lre.config import LREConfig
 from graphMatching.encoders.non_encoder import NonEncoder
 from graphMatching.gma_version import (
     GMA_HARNESS_VERSION,
@@ -196,12 +197,16 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
             alice_key = ENC_CONFIG.get("AliceSecret", 5)
-            alice_encoder = BigramRecordEncoder(
+            alice_encoder = RoundBasedLREEncoder(
                 key=alice_key,
-                round_structure=ENC_CONFIG["round_structure"],
-                input_encoding=ENC_CONFIG.get("input_encoding", "one_hot_encoding"),
-                input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
-                active_layer_count=ENC_CONFIG.get("active_layer_count"),
+                config=LREConfig(
+                    input_mode=ENC_CONFIG.get("input_mode", "one_hot"),
+                    codeword_weight=ENC_CONFIG.get("codeword_weight"),
+                    round_order=ENC_CONFIG.get("round_order", "DPS"),
+                    diffusion_degree=ENC_CONFIG.get("diffusion_degree", 3),
+                    sbox_width=ENC_CONFIG.get("sbox_width", 8),
+                    rounds=ENC_CONFIG.get("rounds", 1),
+                ),
                 workers=GLOBAL_CONFIG["Workers"],
             )
         else:
@@ -342,12 +347,16 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                                        workers=GLOBAL_CONFIG["Workers"])
         elif ENC_CONFIG["EveAlgo"] == "RoundBasedEncoder":
             eve_key = ENC_CONFIG.get("EveSecret", 10)
-            eve_encoder = BigramRecordEncoder(
+            eve_encoder = RoundBasedLREEncoder(
                 key=eve_key,
-                round_structure=ENC_CONFIG["round_structure"],
-                input_encoding=ENC_CONFIG.get("input_encoding", "one_hot_encoding"),
-                input_codeword_weight=ENC_CONFIG.get("input_codeword_weight"),
-                active_layer_count=ENC_CONFIG.get("active_layer_count"),
+                config=LREConfig(
+                    input_mode=ENC_CONFIG.get("input_mode", "one_hot"),
+                    codeword_weight=ENC_CONFIG.get("codeword_weight"),
+                    round_order=ENC_CONFIG.get("round_order", "DPS"),
+                    diffusion_degree=ENC_CONFIG.get("diffusion_degree", 3),
+                    sbox_width=ENC_CONFIG.get("sbox_width", 8),
+                    rounds=ENC_CONFIG.get("rounds", 1),
+                ),
                 workers=GLOBAL_CONFIG["Workers"],
             )
         else:
@@ -779,8 +788,13 @@ if __name__ == "__main__":
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
-        "input_encoding": "one_hot_encoding",
-        "input_codeword_weight": None,
+        # Canonical LRE parameters (used only when AliceAlgo/EveAlgo is RoundBasedEncoder)
+        "input_mode": "one_hot",
+        "codeword_weight": None,
+        "round_order": "DPS",
+        "diffusion_degree": 3,
+        "sbox_width": 8,
+        "rounds": 1,
         "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,
