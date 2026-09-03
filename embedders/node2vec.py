@@ -83,7 +83,7 @@ class N2VEmbedder(Embedder):
         else:
             cb = []
         self.model = Word2Vec(
-            walks, vector_size=self.dim_embeddings, window=self.context_size / 2, min_count=0, sg=1,
+            walks, vector_size=self.dim_embeddings, window=max(1, int(self.context_size // 2)), min_count=0, sg=1,
             workers=self.workers, epochs=self.epochs, compute_loss=True, callbacks=cb, seed=self.seed)
         #alpha=0.05, min_alpha=0.01, seed=self.seed)
 

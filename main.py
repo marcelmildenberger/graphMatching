@@ -204,8 +204,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                     codeword_weight=ENC_CONFIG.get("codeword_weight"),
                     round_order=ENC_CONFIG.get("round_order", "DPS"),
                     diffusion_degree=ENC_CONFIG.get("diffusion_degree", 3),
+                    diffusion_fraction=ENC_CONFIG.get("diffusion_fraction", 1.0),
                     sbox_width=ENC_CONFIG.get("sbox_width", 8),
                     rounds=ENC_CONFIG.get("rounds", 1),
+                    balanced_input_xor_mask=ENC_CONFIG.get(
+                        "balanced_input_xor_mask", False
+                    ),
                 ),
                 workers=GLOBAL_CONFIG["Workers"],
             )
@@ -354,8 +358,12 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                     codeword_weight=ENC_CONFIG.get("codeword_weight"),
                     round_order=ENC_CONFIG.get("round_order", "DPS"),
                     diffusion_degree=ENC_CONFIG.get("diffusion_degree", 3),
+                    diffusion_fraction=ENC_CONFIG.get("diffusion_fraction", 1.0),
                     sbox_width=ENC_CONFIG.get("sbox_width", 8),
                     rounds=ENC_CONFIG.get("rounds", 1),
+                    balanced_input_xor_mask=ENC_CONFIG.get(
+                        "balanced_input_xor_mask", False
+                    ),
                 ),
                 workers=GLOBAL_CONFIG["Workers"],
             )
@@ -793,8 +801,10 @@ if __name__ == "__main__":
         "codeword_weight": None,
         "round_order": "DPS",
         "diffusion_degree": 3,
+        "diffusion_fraction": 1.0,
         "sbox_width": 8,
         "rounds": 1,
+        "balanced_input_xor_mask": False,
         "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,
