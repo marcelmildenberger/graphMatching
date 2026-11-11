@@ -16,8 +16,8 @@ from graphMatching.embedders.netmf import NetMFEmbedder
 from graphMatching.encoders.bf_encoder import BFEncoder
 from graphMatching.encoders.tmh_encoder import TMHEncoder
 from graphMatching.encoders.tsh_encoder import TSHEncoder
-from graphMatching.encoders.rbes_encoder import RoundBasedLREEncoder
-from lre.config import LREConfig
+from graphMatching.encoders.pluribus_encoder import PluribuSGMAEncoder
+from pluribus_helpers.config import PluribuSConfig
 from graphMatching.encoders.non_encoder import NonEncoder
 from graphMatching.gma_version import (
     GMA_HARNESS_VERSION,
@@ -52,7 +52,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
                "DropFrom"] in supported_drops, "Error: Data must be dropped from one of %s" % (
         (supported_drops))
 
-    supported_encs = ["RoundBasedEncoder", "BloomFilter", "TabMinHash", "TwoStepHash", "PST", "Heng", "None", None]
+    supported_encs = ["PluribuS", "BloomFilter", "TabMinHash", "TwoStepHash", "PST", "Heng", "None", None]
     assert (ENC_CONFIG["AliceAlgo"] in supported_encs and ENC_CONFIG["EveAlgo"] in supported_encs), "Error: Encoding " \
                                     "method must be one of %s" % ((supported_encs))
 
@@ -195,21 +195,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             alice_encoder = PSTEncoder(ENC_CONFIG["AlicePSTK"], ENC_CONFIG["AlicePSTL"], ENC_CONFIG["AlicePSTP"],
                                        charset=ENC_CONFIG["AliceCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
-        elif ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
+        elif ENC_CONFIG["AliceAlgo"] == "PluribuS":
             alice_key = ENC_CONFIG.get("AliceSecret", 5)
-            alice_encoder = RoundBasedLREEncoder(
+            alice_encoder = PluribuSGMAEncoder(
                 key=alice_key,
-                config=LREConfig(
-                    input_mode=ENC_CONFIG.get("input_mode", "one_hot"),
-                    codeword_weight=ENC_CONFIG.get("codeword_weight"),
-                    round_order=ENC_CONFIG.get("round_order", "DPS"),
-                    diffusion_degree=ENC_CONFIG.get("diffusion_degree", 3),
-                    diffusion_fraction=ENC_CONFIG.get("diffusion_fraction", 1.0),
-                    sbox_width=ENC_CONFIG.get("sbox_width", 8),
+                config=PluribuSConfig(
+                    sbox_width=ENC_CONFIG.get("sbox_width", 3),
                     rounds=ENC_CONFIG.get("rounds", 1),
-                    balanced_input_xor_mask=ENC_CONFIG.get(
-                        "balanced_input_xor_mask", False
-                    ),
                 ),
                 workers=GLOBAL_CONFIG["Workers"],
             )
@@ -223,7 +215,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # Result is a Float32 Numpy-Array of form [(UID1, UID2, Sim),...]
         pre_alice = lookup_preencoded(alice_uids)
         alice_encode_kwargs = {}
-        if ENC_CONFIG["AliceAlgo"] == "RoundBasedEncoder":
+        if ENC_CONFIG["AliceAlgo"] == "PluribuS":
             alice_encode_kwargs["precomputed_encs"] = pre_alice
         alice_enc = alice_encoder.encode_and_compare(
             alice_data,
@@ -349,21 +341,13 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
             eve_encoder = PSTEncoder(ENC_CONFIG["EvePSTK"], ENC_CONFIG["EvePSTL"], ENC_CONFIG["EvePSTP"],
                                        charset=ENC_CONFIG["EveCharset"], verbose=GLOBAL_CONFIG["Verbose"],
                                        workers=GLOBAL_CONFIG["Workers"])
-        elif ENC_CONFIG["EveAlgo"] == "RoundBasedEncoder":
+        elif ENC_CONFIG["EveAlgo"] == "PluribuS":
             eve_key = ENC_CONFIG.get("EveSecret", 10)
-            eve_encoder = RoundBasedLREEncoder(
+            eve_encoder = PluribuSGMAEncoder(
                 key=eve_key,
-                config=LREConfig(
-                    input_mode=ENC_CONFIG.get("input_mode", "one_hot"),
-                    codeword_weight=ENC_CONFIG.get("codeword_weight"),
-                    round_order=ENC_CONFIG.get("round_order", "DPS"),
-                    diffusion_degree=ENC_CONFIG.get("diffusion_degree", 3),
-                    diffusion_fraction=ENC_CONFIG.get("diffusion_fraction", 1.0),
-                    sbox_width=ENC_CONFIG.get("sbox_width", 8),
+                config=PluribuSConfig(
+                    sbox_width=ENC_CONFIG.get("sbox_width", 3),
                     rounds=ENC_CONFIG.get("rounds", 1),
-                    balanced_input_xor_mask=ENC_CONFIG.get(
-                        "balanced_input_xor_mask", False
-                    ),
                 ),
                 workers=GLOBAL_CONFIG["Workers"],
             )
@@ -380,7 +364,7 @@ def run(GLOBAL_CONFIG, ENC_CONFIG, EMB_CONFIG, ALIGN_CONFIG):
         # records independently with EveSecret instead of reusing Alice's bits.
         pre_eve = eve_precomputed_vectors(eve_uids, lookup_preencoded)
         eve_encode_kwargs = {}
-        if ENC_CONFIG["EveAlgo"] == "RoundBasedEncoder":
+        if ENC_CONFIG["EveAlgo"] == "PluribuS":
             eve_encode_kwargs["precomputed_encs"] = pre_eve
         eve_enc = eve_encoder.encode_and_compare(
             eve_data,
@@ -796,15 +780,9 @@ if __name__ == "__main__":
         "AliceSecret": "SuperSecretSalt1337",
         "AliceN": 2,
         "AliceMetric": "dice",
-        # Canonical LRE parameters (used only when AliceAlgo/EveAlgo is RoundBasedEncoder)
-        "input_mode": "one_hot",
-        "codeword_weight": None,
-        "round_order": "DPS",
-        "diffusion_degree": 3,
-        "diffusion_fraction": 1.0,
-        "sbox_width": 8,
+        # PluribuS PS parameters (used only when AliceAlgo/EveAlgo is "PluribuS")
+        "sbox_width": 3,
         "rounds": 1,
-        "balanced_input_xor_mask": False,
         "EveAlgo": None,
         "EveSecret": "ATotallyDifferentString42",
         "EveN": 2,

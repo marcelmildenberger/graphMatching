@@ -1,4 +1,4 @@
-"""Small GMA adapter for the canonical round-based LRE."""
+"""Graph-matching adapter for the PluribuS encoder."""
 
 from __future__ import annotations
 
@@ -9,18 +9,18 @@ from typing import Any
 
 import numpy as np
 
-from lre.config import LREConfig
-from record_encoder import RoundBasedEncoder
+from pluribus_helpers.config import PluribuSConfig
+from PluribuS import PluribuSEncoder
 
 from .encoder import Encoder, validate_metric
 
 
-class RoundBasedLREEncoder(RoundBasedEncoder, Encoder):
+class PluribuSGMAEncoder(PluribuSEncoder, Encoder):
     def __init__(
         self,
         *,
         key: str | int,
-        config: LREConfig,
+        config: PluribuSConfig,
         workers: int = -1,
     ) -> None:
         resolved_workers = (os.cpu_count() or 1) if workers == -1 else max(1, int(workers))
@@ -46,7 +46,7 @@ class RoundBasedLREEncoder(RoundBasedEncoder, Encoder):
         if metric == "hamming_similarity":
             output = 1.0 - hamming_distance.astype(np.float32) / float(self.num_bits)
             return output if similarity else 1.0 - output
-        raise ValueError(f"unsupported LRE graph metric: {metric}")
+        raise ValueError(f"unsupported PluribuS graph metric: {metric}")
 
     def _record_indices(self, record: Any) -> np.ndarray:
         if isinstance(record, str):
